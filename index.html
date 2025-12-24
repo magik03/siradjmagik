@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات السحابي - نسخة التصحيح</title>
+    <title>مدير السيرفرات السحابي الذكي</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -33,10 +32,7 @@
             const [isConfigOpen, setIsConfigOpen] = useState(false);
             const [sha, setSha] = useState('');
             
-            const [config, setConfig] = useState(() => {
-                const saved = localStorage.getItem('gh_config');
-                return saved ? JSON.parse(saved) : { token: '', owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' };
-            });
+            const config = JSON.parse(localStorage.getItem('gh_config') || '{"token":"","owner":"magik03","repo":"siradjmagik","path":"servers.json"}');
 
             useEffect(() => {
                 if (config.token) loadData();
@@ -50,113 +46,110 @@
                     const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
                         headers: { Authorization: `token ${config.token}`, 'Cache-Control': 'no-cache' }
                     });
-                    if (!res.ok) throw new Error("لم يتم العثور على ملف servers.json أو التوكن خطأ");
                     const data = await res.json();
-                    if (data.content) {
-                        const content = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-                        setServers(content);
+                    if (data.sha) {
                         setSha(data.sha);
+                        setServers(JSON.parse(decodeURIComponent(escape(atob(data.content)))));
                     }
-                } catch (err) { alert("خطأ في جلب البيانات: " + err.message); }
+                } catch (e) { console.error("Error loading data"); }
                 finally { setLoading(false); }
             };
 
             const saveData = async (newList) => {
                 setLoading(true);
+                // دالة داخلية للحصول على أحدث SHA قبل الحفظ لتجنب خطأ Mismatch
+                const getLatestSha = async () => {
+                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
+                        headers: { Authorization: `token ${config.token}`, 'Cache-Control': 'no-cache' }
+                    });
+                    const data = await res.json();
+                    return data.sha;
+                };
+
                 try {
+                    const currentSha = await getLatestSha(); // جلب أحدث SHA الآن
                     const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
                     const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
                         method: 'PUT',
-                        headers: { 
-                            Authorization: `token ${config.token}`, 
-                            'Content-Type': 'application/json' 
-                        },
-                        body: JSON.stringify({ message: "Update via App", content, sha })
+                        headers: { Authorization: `token ${config.token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: "Update via Smart App", content, sha: currentSha })
                     });
                     
                     if (res.ok) {
                         const d = await res.json();
                         setSha(d.content.sha);
                         setServers(newList);
-                        alert("✅ ممتاز! تم الحفظ في GitHub بنجاح");
+                        alert("✅ تم الحفظ بنجاح في السحاب!");
                     } else {
-                        const errData = await res.json();
-                        alert("❌ فشل الحفظ! السبب: " + errData.message);
+                        alert("❌ فشل الحفظ، تأكد من إعدادات التوكن.");
                     }
-                } catch (err) { alert("❌ فشل الاتصال بالإنترنت"); }
+                } catch (e) { alert("❌ خطأ في الاتصال"); }
                 finally { setLoading(false); }
             };
 
             return (
                 <div className="min-h-screen">
-                    <nav className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-lg">
+                    <nav className="bg-blue-700 p-4 text-white flex justify-between items-center shadow-lg sticky top-0 z-50">
                         <div className="flex items-center gap-2 font-bold"><Server /> مدير السيرفرات</div>
                         <div className="flex gap-2">
-                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-blue-500 rounded-lg"><Settings size={20}/></button>
-                            <button onClick={loadData} className="p-2 bg-blue-500 rounded-lg"><RefreshCw size={20} className={loading ? "animate-spin" : ""}/></button>
-                            <button onClick={() => setIsFormOpen(true)} className="bg-white text-blue-600 px-4 py-2 rounded-lg font-bold">إضافة +</button>
+                            <button onClick={loadData} className="p-2 bg-blue-600 rounded-lg shadow-inner"><RefreshCw size={20} className={loading ? "animate-spin" : ""}/></button>
+                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-blue-600 rounded-lg shadow-inner"><Settings size={20}/></button>
+                            <button onClick={() => setIsFormOpen(true)} className="bg-green-500 hover:bg-green-600 px-4 py-2 rounded-lg font-bold shadow-md transition-all">إضافة +</button>
                         </div>
                     </nav>
 
-                    <main className="p-6 max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <main className="p-4 max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        {servers.length === 0 && !loading && <div className="col-span-full text-center py-20 text-gray-400">لا يوجد بيانات.. أضف أول سيرفر الآن!</div>}
                         {servers.map(s => (
-                            <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 animate-fade">
-                                <div className="flex justify-between mb-2">
-                                    <h3 className="font-bold text-blue-600">{s.name}</h3>
-                                    <button onClick={() => saveData(servers.filter(x => x.id !== s.id))} className="text-red-300 hover:text-red-500"><Trash2 size={18}/></button>
+                            <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border-2 border-transparent hover:border-blue-100 transition-all flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-bold text-lg text-gray-800">{s.name}</h3>
+                                    <p className="text-xs text-blue-500 font-bold mb-2 truncate max-w-[200px]" dir="ltr">{s.url}</p>
+                                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                                        <Calendar size={14}/> ينتهي: <span className="font-bold text-red-500">{new Date(s.endDate).toLocaleDateString('ar-EG')}</span>
+                                    </div>
+                                    <div className={`mt-2 inline-block px-3 py-1 rounded-full text-[10px] font-bold ${s.isPaid ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                        {s.isPaid ? 'خالص ومدفوع' : 'غير خالص'}
+                                    </div>
                                 </div>
-                                <div className="text-sm text-gray-500 space-y-1">
-                                    <div className="flex items-center gap-2 font-bold text-gray-800 underline"><LinkIcon size={14}/> {s.url}</div>
-                                    <div className="flex items-center gap-2"><Calendar size={14}/> ينتهي: {new Date(s.endDate).toLocaleDateString('ar-EG')}</div>
-                                    <div className={`font-bold ${s.isPaid ? 'text-green-600' : 'text-orange-600'}`}> {s.isPaid ? '✓ مدفوع' : '⚠ غير مدفوع'}</div>
-                                </div>
+                                <button onClick={() => {if(confirm('هل تريد الحذف؟')) saveData(servers.filter(x=>x.id!==s.id))}} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
                             </div>
                         ))}
                     </main>
 
                     {isConfigOpen && (
-                        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const fd = new FormData(e.target);
-                                localStorage.setItem('gh_config', JSON.stringify({ token: fd.get('token'), owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' }));
-                                window.location.reload();
-                            }} className="bg-white p-6 rounded-3xl w-full max-w-md space-y-4 shadow-2xl">
-                                <h2 className="font-bold text-xl text-center">إعدادات GitHub Sync</h2>
-                                <input name="token" type="password" defaultValue={config.token} placeholder="ضع التوكن ghp_..." className="w-full border-2 p-3 rounded-xl" required />
-                                <button type="submit" className="w-full bg-slate-800 text-white py-4 rounded-xl font-bold">حفظ وإتصال</button>
-                            </form>
+                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white p-6 rounded-3xl w-full max-w-md shadow-2xl">
+                                <h2 className="text-2xl font-black mb-4">إعدادات GitHub</h2>
+                                <input id="tk" type="password" defaultValue={config.token} placeholder="ghp_..." className="w-full border-2 p-3 rounded-2xl mb-4 outline-none focus:border-blue-500" />
+                                <button onClick={() => {
+                                    const tk = document.getElementById('tk').value;
+                                    localStorage.setItem('gh_config', JSON.stringify({...config, token: tk}));
+                                    window.location.reload();
+                                }} className="w-full bg-blue-700 text-white py-4 rounded-2xl font-bold shadow-lg">حفظ ومزامنة</button>
+                                <button onClick={() => setIsConfigOpen(false)} className="w-full text-gray-400 mt-2 text-sm">إغلاق</button>
+                            </div>
                         </div>
                     )}
 
                     {isFormOpen && (
-                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-40">
                             <form onSubmit={(e) => {
                                 e.preventDefault();
                                 const fd = new FormData(e.target);
-                                const newS = { 
-                                    id: Date.now(), 
-                                    name: fd.get('name'), 
-                                    url: fd.get('url'),
-                                    isPaid: fd.get('isPaid') === 'true',
-                                    endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() 
-                                };
+                                const newS = { id: Date.now(), name: fd.get('name'), url: fd.get('url'), isPaid: fd.get('isPaid') === 'true', endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() };
                                 saveData([newS, ...servers]);
                                 setIsFormOpen(false);
                             }} className="bg-white p-6 rounded-3xl w-full max-w-sm space-y-4">
-                                <h2 className="font-bold text-lg">إضافة سيرفر جديد</h2>
-                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 p-3 rounded-xl" required />
-                                <input name="url" placeholder="رابط السيرفر" className="w-full border-2 p-3 rounded-xl" required />
-                                <select name="dur" className="w-full border-2 p-3 rounded-xl">
-                                    <option value="1">شهر واحد</option>
-                                    <option value="12">سنة كاملة</option>
-                                </select>
-                                <select name="isPaid" className="w-full border-2 p-3 rounded-xl">
-                                    <option value="true">مدفوع</option>
-                                    <option value="false">غير مدفوع</option>
-                                </select>
-                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">حفظ سحابي</button>
-                                <button type="button" onClick={()=>setIsFormOpen(false)} className="w-full text-gray-400">إلغاء</button>
+                                <h2 className="font-bold text-xl">إضافة سيرفر</h2>
+                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 p-3 rounded-2xl" required />
+                                <input name="url" placeholder="رابط السيرفر" className="w-full border-2 p-3 rounded-2xl" required />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select name="dur" className="border-2 p-3 rounded-2xl"><option value="1">شهر</option><option value="12">سنة</option></select>
+                                    <select name="isPaid" className="border-2 p-3 rounded-2xl"><option value="true">مدفوع</option><option value="false">غير خالص</option></select>
+                                </div>
+                                <button type="submit" disabled={loading} className="w-full bg-blue-700 text-white py-4 rounded-2xl font-bold shadow-lg">حفظ سحابي</button>
+                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400">إلغاء</button>
                             </form>
                         </div>
                     )}
