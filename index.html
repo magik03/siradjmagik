@@ -1,145 +1,29 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات الاحترافي</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "lucide-react": "https://esm.sh/lucide-react@0.292.0"
-      }
+// استبدل دالة saveData في الكود بهذا الجزء فقط أو انسخ الكود كاملاً مرة أخرى
+const saveData = async (newList) => {
+    setLoading(true);
+    try {
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
+        const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
+            method: 'PUT',
+            headers: { 
+                Authorization: `token ${config.token}`, 
+                'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({ message: "Update", content, sha })
+        });
+        
+        if (res.ok) {
+            const d = await res.json();
+            setSha(d.content.sha);
+            setServers(newList);
+            alert("✅ تم الحفظ في GitHub بنجاح!");
+        } else {
+            const errorData = await res.json();
+            alert("❌ فشل الحفظ: " + errorData.message); // سيخبرك هنا ما المشكلة بالضبط
+        }
+    } catch (e) {
+        alert("❌ خطأ في الاتصال بالإنترنت");
+    } finally {
+        setLoading(false);
     }
-    </script>
-    <style>body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }</style>
-</head>
-<body>
-    <div id="root"></div>
-    <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useMemo } from 'react';
-        import { createRoot } from 'react-dom/client';
-        import { Trash2, Edit, Calendar, Link as LinkIcon, Server, Save, Plus, RefreshCw, Settings, X, Globe, DollarSign } from 'lucide-react';
-
-        const App = () => {
-            const [servers, setServers] = useState([]);
-            const [loading, setLoading] = useState(false);
-            const [isFormOpen, setIsFormOpen] = useState(false);
-            const [isConfigOpen, setIsConfigOpen] = useState(false);
-            const [sha, setSha] = useState('');
-            const [config, setConfig] = useState(() => {
-                const saved = localStorage.getItem('gh_config');
-                return saved ? JSON.parse(saved) : { token: '', owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' };
-            });
-
-            useEffect(() => { if (!config.token) setIsConfigOpen(true); else loadData(); }, []);
-
-            const loadData = async () => {
-                if (!config.token) return;
-                setLoading(true);
-                try {
-                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { Authorization: `token ${config.token}`, 'Cache-Control': 'no-cache' }
-                    });
-                    const data = await res.json();
-                    if (data.content) {
-                        setServers(JSON.parse(decodeURIComponent(escape(atob(data.content)))));
-                        setSha(data.sha);
-                    }
-                } catch (e) { console.error(e); } finally { setLoading(false); }
-            };
-
-            const saveData = async (newList) => {
-                setLoading(true);
-                try {
-                    const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
-                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        method: 'PUT',
-                        headers: { Authorization: `token ${config.token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: "Update", content, sha })
-                    });
-                    if (res.ok) { const d = await res.json(); setSha(d.content.sha); setServers(newList); }
-                } catch (e) { alert("خطأ في الحفظ"); } finally { setLoading(false); }
-            };
-
-            return (
-                <div className="min-h-screen pb-10">
-                    <nav className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-lg sticky top-0 z-40">
-                        <div className="flex items-center gap-2 font-bold"><Globe size={20}/> مدير السيرفرات السحابي</div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-blue-500 rounded-lg"><Settings size={18}/></button>
-                            <button onClick={loadData} className="p-2 bg-blue-500 rounded-lg"><RefreshCw size={18} className={loading ? 'animate-spin' : ''}/></button>
-                            <button onClick={() => setIsFormOpen(true)} className="bg-white text-blue-600 px-4 py-2 rounded-lg font-bold">إضافة +</button>
-                        </div>
-                    </nav>
-
-                    <main className="p-4 max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {servers.map(s => (
-                            <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative">
-                                <div className="flex justify-between mb-4">
-                                    <h3 className="font-bold text-gray-800">{s.name}</h3>
-                                    <button onClick={() => saveData(servers.filter(x => x.id !== s.id))} className="text-red-300 hover:text-red-500"><Trash2 size={18}/></button>
-                                </div>
-                                <div className="space-y-2 text-sm text-gray-600">
-                                    <div className="flex justify-between"><span>النوع:</span> <span className="font-bold">{s.type}</span></div>
-                                    <div className="flex justify-between"><span>ينتهي:</span> <span className="text-blue-600 font-bold">{new Date(s.endDate).toLocaleDateString('ar-EG')}</span></div>
-                                    <div className={`py-1 px-3 rounded-lg text-center font-bold text-xs ${s.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
-                                        {s.isPaid ? 'مدفوع وخالص' : 'غير خالص'}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </main>
-
-                    {isConfigOpen && (
-                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const fd = new FormData(e.target);
-                                localStorage.setItem('gh_config', JSON.stringify({ token: fd.get('token'), owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' }));
-                                window.location.reload();
-                            }} className="bg-white p-8 rounded-3xl w-full max-w-md space-y-4">
-                                <h2 className="text-2xl font-black text-center">إعدادات الربط</h2>
-                                <p className="text-sm text-center text-gray-500">أدخل التوكن الجديد هنا. لن يظهر هذا التوكن على GitHub أبداً.</p>
-                                <input name="token" type="password" placeholder="ghp_..." className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
-                                <button type="submit" className="w-full bg-slate-800 text-white py-4 rounded-xl font-bold">حفظ وإتصال</button>
-                            </form>
-                        </div>
-                    )}
-
-                    {isFormOpen && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-40">
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const fd = new FormData(e.target);
-                                const newS = {
-                                    id: Date.now(),
-                                    name: fd.get('name'),
-                                    type: fd.get('type'),
-                                    isPaid: fd.get('isPaid') === 'true',
-                                    endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString()
-                                };
-                                saveData([newS, ...servers]);
-                                setIsFormOpen(false);
-                            }} className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
-                                <h2 className="font-bold text-lg">إضافة سيرفر</h2>
-                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 p-3 rounded-xl" required />
-                                <select name="type" className="w-full border-2 p-3 rounded-xl"><option>فاميلي</option><option>نيو</option></select>
-                                <select name="dur" className="w-full border-2 p-3 rounded-xl"><option value="1">شهر</option><option value="12">سنة</option></select>
-                                <select name="isPaid" className="w-full border-2 p-3 rounded-xl"><option value="true">خالص</option><option value="false">غير خالص</option></select>
-                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">حفظ سحابي</button>
-                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400 text-sm">إلغاء</button>
-                            </form>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-        createRoot(document.getElementById('root')).render(<App />);
-    </script>
-</body>
-</html>
+};
