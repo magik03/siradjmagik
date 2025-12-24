@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات - النسخة النهائية</title>
+    <title>مدير السيرفرات - النسخة الاحترافية</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -17,25 +17,32 @@
       }
     }
     </script>
-    <style>body { font-family: 'Cairo', sans-serif; background-color: #f0f4f8; }</style>
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #f4f7fa; }
+        .loading-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Trash2, Calendar, Server, Plus, RefreshCw, Settings, X, Save, Globe } from 'lucide-react';
+        import { Trash2, Calendar, Server, Plus, RefreshCw, Settings, Save, X, Globe, AlertCircle, CheckCircle } from 'lucide-react';
 
         const App = () => {
             const [servers, setServers] = useState([]);
             const [loading, setLoading] = useState(false);
             const [isFormOpen, setIsFormOpen] = useState(false);
             const [isConfigOpen, setIsConfigOpen] = useState(false);
+            const [status, setStatus] = useState('');
             
             const [config, setConfig] = useState(() => {
                 const saved = localStorage.getItem('gh_config');
                 return saved ? JSON.parse(saved) : { token: '', owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' };
             });
+
+            const cleanToken = (t) => t.trim().replace(/[^\x20-\x7E]/g, "");
 
             useEffect(() => {
                 if (config.token) loadData();
@@ -43,51 +50,58 @@
             }, []);
 
             const loadData = async () => {
-                if (!config.token) return;
+                const token = cleanToken(config.token);
+                if (!token) return;
                 setLoading(true);
                 try {
                     const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { 'Authorization': `token ${config.token}`, 'Cache-Control': 'no-cache' }
+                        headers: { 'Authorization': `token ${token}`, 'Cache-Control': 'no-cache' }
                     });
-                    if (!res.ok) throw new Error("التوكن غير صالح أو الملف غير موجود");
+                    
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.message);
+                    }
+
                     const data = await res.json();
-                    setServers(JSON.parse(decodeURIComponent(escape(atob(data.content)))));
-                } catch (e) { alert("❌ فشل الجلب: " + e.message); }
-                finally { setLoading(false); }
+                    const content = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+                    setServers(content);
+                    setStatus('connected');
+                } catch (err) {
+                    setStatus('error');
+                    console.error(err);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             const saveData = async (newList) => {
+                const token = cleanToken(config.token);
                 setLoading(true);
                 try {
-                    // 1. جلب حالة الملف الحالية (SHA)
+                    // جلب أحدث SHA للملف
                     const getRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { 'Authorization': `token ${config.token}`, 'Cache-Control': 'no-cache' }
+                        headers: { 'Authorization': `token ${token}`, 'Cache-Control': 'no-cache' }
                     });
                     const getData = await getRes.json();
                     
-                    if (!getRes.ok) throw new Error("لا يمكن الوصول للمستودع");
-
-                    // 2. إرسال التحديث
                     const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
                     const putRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
                         method: 'PUT',
-                        headers: { 
-                            'Authorization': `token ${config.token}`,
-                            'Content-Type': 'application/json' 
-                        },
+                        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({ message: "Update", content, sha: getData.sha })
                     });
-                    
+
                     if (putRes.ok) {
                         setServers(newList);
-                        alert("✅ تم الحفظ بنجاح في السحاب!");
+                        alert("✅ تم الحفظ بنجاح!");
                         setIsFormOpen(false);
                     } else {
                         const err = await putRes.json();
-                        throw new Error(err.message);
+                        alert("❌ فشل الحفظ: " + err.message);
                     }
-                } catch (e) {
-                    alert("❌ خطأ من GitHub: " + e.message);
+                } catch (err) {
+                    alert("❌ خطأ اتصال: " + err.message);
                 } finally {
                     setLoading(false);
                 }
@@ -95,58 +109,92 @@
 
             return (
                 <div className="min-h-screen">
-                    <nav className="bg-slate-900 p-4 text-white flex justify-between items-center shadow-xl">
-                        <div className="flex items-center gap-2 font-bold"><Globe className="text-blue-400"/> مدير السيرفرات</div>
+                    {/* شريط علوي أنيق */}
+                    <nav className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-blue-600 p-2 rounded-lg text-white"><Server size={20}/></div>
+                            <span className="font-bold text-gray-800">سيرفرات {config.owner}</span>
+                            {status === 'connected' ? <CheckCircle size={16} className="text-green-500"/> : <AlertCircle size={16} className="text-red-400"/>}
+                        </div>
                         <div className="flex gap-2">
-                            <button onClick={loadData} className="p-2 bg-slate-800 rounded-lg"><RefreshCw size={20} className={loading ? "animate-spin" : ""}/></button>
-                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-slate-800 rounded-lg"><Settings size={20}/></button>
-                            <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 px-4 py-2 rounded-lg font-bold">إضافة +</button>
+                            <button onClick={loadData} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full"><RefreshCw size={20} className={loading ? "loading-spin" : ""}/></button>
+                            <button onClick={() => setIsConfigOpen(true)} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full"><Settings size={20}/></button>
+                            <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all text-sm">+ إضافة سيرفر</button>
                         </div>
                     </nav>
 
+                    {/* القائمة */}
                     <main className="p-4 max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {status === 'error' && (
+                            <div className="col-span-full bg-red-50 text-red-600 p-4 rounded-xl text-center text-sm font-bold border border-red-100">
+                                ❌ هناك مشكلة في الاتصال بـ GitHub. تأكد من التوكن في الإعدادات.
+                            </div>
+                        )}
+                        {servers.length === 0 && !loading && status === 'connected' && (
+                            <div className="col-span-full text-center py-20 text-gray-400">القائمة فارغة.. ابدأ بإضافة أول سيرفر</div>
+                        )}
                         {servers.map(s => (
-                            <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start">
+                            <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-50 flex justify-between items-start transition-all hover:shadow-md">
                                 <div>
-                                    <h3 className="font-bold text-slate-800">{s.name}</h3>
-                                    <p className="text-xs text-blue-600 font-bold" dir="ltr">{s.url}</p>
-                                    <p className="text-xs text-slate-400 mt-2">ينتهي: {new Date(s.endDate).toLocaleDateString('ar-EG')}</p>
+                                    <h3 className="font-bold text-gray-800 text-lg mb-1">{s.name}</h3>
+                                    <p className="text-blue-500 text-xs font-medium mb-3 truncate max-w-[180px]" dir="ltr">{s.url}</p>
+                                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                                        <Calendar size={14}/> ينتهي: <span className="font-bold text-gray-700">{new Date(s.endDate).toLocaleDateString('ar-EG')}</span>
+                                    </div>
+                                    <div className={`mt-3 inline-block px-3 py-1 rounded-full text-[10px] font-bold ${s.isPaid ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                        {s.isPaid ? 'خالص' : 'بانتظار الدفع'}
+                                    </div>
                                 </div>
-                                <button onClick={() => {if(confirm('حذف؟')) saveData(servers.filter(x=>x.id!==s.id))}} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>
+                                <button onClick={() => {if(confirm('هل تريد الحذف؟')) saveData(servers.filter(x=>x.id!==s.id))}} className="p-2 text-gray-200 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
                             </div>
                         ))}
                     </main>
 
+                    {/* نافذة الإعدادات */}
                     {isConfigOpen && (
-                        <div className="fixed inset-0 bg-slate-900/95 flex items-center justify-center p-4 z-50">
-                            <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
-                                <h2 className="text-2xl font-black mb-6 flex items-center gap-2"><Settings/> إعدادات الربط</h2>
-                                <label className="text-xs font-bold text-slate-400 block mb-1 uppercase">GitHub Personal Token</label>
-                                <input id="tk" type="password" defaultValue={config.token} placeholder="ghp_..." className="w-full border-2 p-4 rounded-2xl mb-6 outline-none focus:border-blue-500" />
-                                <button onClick={() => {
-                                    const tk = document.getElementById('tk').value;
-                                    localStorage.setItem('gh_config', JSON.stringify({...config, token: tk}));
-                                    window.location.reload();
-                                }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">ربط ومزامنة</button>
+                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl">
+                                <h2 className="text-2xl font-black mb-2 text-gray-800">إعدادات الربط</h2>
+                                <p className="text-xs text-gray-400 mb-6 font-bold">يرجى التأكد من أن التوكن يبدأ بـ ghp_ ولا يحتوي على مسافات.</p>
+                                <div className="space-y-4">
+                                    <div className="group">
+                                        <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase px-1">GitHub Personal Token</label>
+                                        <input id="tk" type="password" defaultValue={config.token} className="w-full border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all" placeholder="ghp_..." />
+                                    </div>
+                                    <button onClick={() => {
+                                        const tk = cleanToken(document.getElementById('tk').value);
+                                        localStorage.setItem('gh_config', JSON.stringify({...config, token: tk}));
+                                        window.location.reload();
+                                    }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-all">حفظ ومزامنة البيانات</button>
+                                </div>
                             </div>
                         </div>
                     )}
 
+                    {/* نافذة الإضافة */}
                     {isFormOpen && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-40">
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-40 backdrop-blur-sm">
                             <form onSubmit={(e) => {
                                 e.preventDefault();
                                 const fd = new FormData(e.target);
-                                const newS = { id: Date.now(), name: fd.get('name'), url: fd.get('url'), isPaid: fd.get('isPaid') === 'true', endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() };
+                                const newS = { 
+                                    id: Date.now(), 
+                                    name: fd.get('name'), 
+                                    url: fd.get('url'), 
+                                    isPaid: fd.get('isPaid') === 'true', 
+                                    endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() 
+                                };
                                 saveData([newS, ...servers]);
-                            }} className="bg-white p-6 rounded-3xl w-full max-w-sm space-y-4">
-                                <h2 className="font-bold text-xl">سيرفر جديد</h2>
-                                <input name="name" placeholder="الاسم" className="w-full border-2 p-3 rounded-xl" required />
-                                <input name="url" placeholder="رابط السيرفر" className="w-full border-2 p-3 rounded-xl" required />
-                                <select name="dur" className="w-full border-2 p-3 rounded-xl"><option value="1">شهر</option><option value="12">سنة</option></select>
-                                <select name="isPaid" className="w-full border-2 p-3 rounded-xl"><option value="true">مدفوع</option><option value="false">غير خالص</option></select>
-                                <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">{loading ? "جاري الاتصال..." : "حفظ سحابي"}</button>
-                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-slate-400">إلغاء</button>
+                            }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm space-y-4 shadow-2xl">
+                                <h2 className="font-black text-xl text-gray-800 mb-2">إضافة سيرفر جديد</h2>
+                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 border-gray-50 p-4 rounded-2xl outline-none" required />
+                                <input name="url" placeholder="رابط السيرفر" className="w-full border-2 border-gray-50 p-4 rounded-2xl outline-none" required />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <select name="dur" className="border-2 border-gray-50 p-4 rounded-2xl bg-white outline-none"><option value="1">شهر</option><option value="12">سنة</option></select>
+                                    <select name="isPaid" className="border-2 border-gray-50 p-4 rounded-2xl bg-white font-bold outline-none"><option value="true">خالص ✅</option><option value="false">غير خالص ❌</option></select>
+                                </div>
+                                <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-100">{loading ? "جاري الحفظ.." : "تأكيد الحفظ السحابي"}</button>
+                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400 font-bold text-sm">إلغاء</button>
                             </form>
                         </div>
                     )}
