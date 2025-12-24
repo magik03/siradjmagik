@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات السحابي الآمن</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>مدير السيرفرات الاحترافي - سحابي</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="importmap">
     {
@@ -16,36 +16,43 @@
       }
     }
     </script>
-    <style>body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }</style>
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect } from 'react';
+        import React, { useState, useEffect, useMemo } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Trash2, Calendar, Server, Save, Plus, RefreshCw, X, Settings, ShieldCheck } from 'lucide-react';
+        import { 
+            Trash2, Edit, Calendar, Link as LinkIcon, Server as ServerIcon, 
+            AlertTriangle, CheckCircle2, AlertCircle, Save, X, 
+            Plus, Search, Database, Filter, Settings, RefreshCw, Globe
+        } from 'lucide-react';
 
         const App = () => {
+            // --- States ---
             const [servers, setServers] = useState([]);
             const [loading, setLoading] = useState(false);
             const [isFormOpen, setIsFormOpen] = useState(false);
             const [isConfigOpen, setIsConfigOpen] = useState(false);
+            const [editingServer, setEditingServer] = useState(null);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [activeFilter, setActiveFilter] = useState('all');
             const [sha, setSha] = useState('');
-            
-            // جلب الإعدادات من ذاكرة المتصفح
+
             const [config, setConfig] = useState(() => {
                 const saved = localStorage.getItem('gh_config');
                 return saved ? JSON.parse(saved) : { token: '', owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' };
             });
 
-            useEffect(() => {
-                if (config.token) loadData();
-                else setIsConfigOpen(true);
-            }, []);
-
-            const loadData = async () => {
-                if (!config.token) return;
+            // --- GitHub Logic ---
+            const loadFromGithub = async () => {
+                if (!config.token) { setIsConfigOpen(true); return; }
                 setLoading(true);
                 try {
                     const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
@@ -57,122 +64,286 @@
                         setServers(content);
                         setSha(data.sha);
                     }
-                } catch (err) { alert("تأكد من صحة التوكن والإعدادات"); }
-                finally { setLoading(false); }
+                } catch (err) {
+                    console.error(err);
+                    alert("خطأ في الاتصال بـ GitHub. تأكد من الإعدادات.");
+                } finally { setLoading(false); }
             };
 
-            const saveData = async (newList) => {
+            useEffect(() => { loadFromGithub(); }, []);
+
+            const saveToGithub = async (updatedList) => {
                 setLoading(true);
                 try {
-                    const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
+                    const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedList, null, 2))));
                     const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
                         method: 'PUT',
                         headers: { Authorization: `token ${config.token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: "Update via App", content, sha })
+                        body: JSON.stringify({ message: "تحديث السيرفرات", content, sha })
                     });
                     if (res.ok) {
                         const resData = await res.json();
                         setSha(resData.content.sha);
-                        setServers(newList);
+                        setServers(updatedList);
+                        return true;
                     }
-                } catch (err) { alert("فشل في الحفظ!"); }
+                } catch (err) { alert("فشل في مزامنة البيانات سحابياً."); }
                 finally { setLoading(false); }
+                return false;
             };
 
-            const handleSaveConfig = (e) => {
-                e.preventDefault();
-                const fd = new FormData(e.target);
-                const newConfig = {
-                    token: fd.get('token'),
-                    owner: fd.get('owner'),
-                    repo: fd.get('repo'),
-                    path: 'servers.json'
-                };
-                localStorage.setItem('gh_config', JSON.stringify(newConfig));
-                setConfig(newConfig);
-                setIsConfigOpen(false);
-                window.location.reload(); // إعادة تحميل لتنشيط الإعدادات
+            // --- Actions ---
+            const handleAddOrUpdate = async (formData) => {
+                let newList;
+                if (editingServer) {
+                    newList = servers.map(s => s.id === editingServer.id ? { ...editingServer, ...formData, endDate: calculateEndDate(editingServer.startDate, formData.duration) } : s);
+                } else {
+                    const now = new Date().toISOString();
+                    const newEntry = {
+                        id: Date.now().toString(),
+                        ...formData,
+                        startDate: now,
+                        endDate: calculateEndDate(now, formData.duration)
+                    };
+                    newList = [newEntry, ...servers];
+                }
+                const success = await saveToGithub(newList);
+                if (success) { setIsFormOpen(false); setEditingServer(null); }
             };
+
+            const handleDelete = async (id) => {
+                if (confirm('هل أنت متأكد من حذف هذا السيرفر نهائياً؟')) {
+                    const newList = servers.filter(s => s.id !== id);
+                    await saveToGithub(newList);
+                }
+            };
+
+            const calculateEndDate = (start, months) => {
+                const date = new Date(start);
+                date.setMonth(date.getMonth() + parseInt(months));
+                return date.toISOString();
+            };
+
+            // --- Filtering Logic ---
+            const filteredServers = useMemo(() => {
+                return servers.filter(s => {
+                    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase());
+                    const isExpired = new Date() > new Date(s.endDate);
+                    if (!matchesSearch) return false;
+                    if (activeFilter === 'expired') return isExpired;
+                    if (activeFilter === 'unpaid') return !s.isPaid;
+                    if (activeFilter === 'active') return s.isPaid && !isExpired;
+                    return true;
+                });
+            }, [servers, searchTerm, activeFilter]);
+
+            // --- Stats ---
+            const stats = useMemo(() => ({
+                total: servers.length,
+                expired: servers.filter(s => new Date() > new Date(s.endDate)).length,
+                unpaid: servers.filter(s => !s.isPaid).length,
+                active: servers.filter(s => s.isPaid && new Date() <= new Date(s.endDate)).length
+            }), [servers]);
 
             return (
-                <div className="min-h-screen">
-                    <nav className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-xl">
-                        <div className="flex items-center gap-2">
-                            <ShieldCheck className="text-green-400" />
-                            <h1 className="font-bold">مدير السيرفرات (نسخة آمنة)</h1>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-slate-700 rounded-lg"><Settings size={20}/></button>
-                            <button onClick={loadData} className="p-2 bg-slate-700 rounded-lg"><RefreshCw size={20} className={loading ? "animate-spin" : ""}/></button>
-                            <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 px-4 py-2 rounded-lg font-bold">إضافة +</button>
-                        </div>
-                    </nav>
+                <div className="min-h-screen pb-20">
+                    {/* Header */}
+                    <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
+                                    <Globe size={24} />
+                                </div>
+                                <h1 className="text-xl font-bold text-gray-800 hidden sm:block">مدير السيرفرات السحابي</h1>
+                            </div>
 
-                    <main className="p-6 max-w-5xl mx-auto">
-                        {!config.token && (
-                            <div className="bg-yellow-50 border-r-4 border-yellow-400 p-4 mb-6 text-yellow-800">
-                                يرجى الضغط على أيقونة الإعدادات ⚙️ وإدخال التوكن الخاص بك للبدء.
+                            <div className="flex-1 max-w-md relative">
+                                <input 
+                                    type="text" 
+                                    placeholder="ابحث عن سيرفر..." 
+                                    className="w-full pr-10 pl-4 py-2 bg-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                                <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button onClick={loadFromGithub} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><RefreshCw size={20} className={loading ? "animate-spin" : ""} /></button>
+                                <button onClick={() => setIsConfigOpen(true)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Settings size={20} /></button>
+                                <button onClick={() => { setEditingServer(null); setIsFormOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-200">
+                                    <Plus size={20} /> <span className="hidden sm:inline">إضافة</span>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 py-8">
+                        {/* Stats Widgets */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                            <StatCard label="الإجمالي" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
+                            <StatCard label="منتهية" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
+                            <StatCard label="غير خالص" val={stats.unpaid} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
+                            <StatCard label="نشط" val={stats.active} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
+                        </div>
+
+                        {/* Grid */}
+                        {loading && servers.length === 0 ? (
+                            <div className="flex justify-center py-20"><RefreshCw className="animate-spin text-blue-600" size={40} /></div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredServers.map(server => (
+                                    <ServerCard 
+                                        key={server.id} 
+                                        server={server} 
+                                        onEdit={() => { setEditingServer(server); setIsFormOpen(true); }}
+                                        onDelete={() => handleDelete(server.id)}
+                                    />
+                                ))}
                             </div>
                         )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {servers.map(s => (
-                                <div key={s.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-bold text-lg">{s.name}</h3>
-                                        <p className="text-gray-500 text-sm italic">{new Date(s.endDate).toLocaleDateString('ar-EG')}</p>
-                                    </div>
-                                    <button onClick={() => saveData(servers.filter(x => x.id !== s.id))} className="text-red-300 hover:text-red-500"><Trash2 size={18}/></button>
-                                </div>
-                            ))}
-                        </div>
                     </main>
 
-                    {/* نافذة الإعدادات */}
-                    {isConfigOpen && (
-                        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
-                            <form onSubmit={handleSaveConfig} className="bg-white p-6 rounded-2xl w-full max-w-md space-y-4 shadow-2xl">
-                                <h2 className="font-bold text-xl flex items-center gap-2 text-slate-800"><Settings /> إعدادات الربط السحابي</h2>
-                                <p className="text-sm text-gray-500">بياناتك تُحفظ في متصفحك فقط ولا تظهر على GitHub.</p>
-                                
-                                <div>
-                                    <label className="block text-xs font-bold mb-1">GitHub Personal Token</label>
-                                    <input name="token" type="password" defaultValue={config.token} placeholder="ghp_..." className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold mb-1">Username (اسم المستخدم)</label>
-                                    <input name="owner" defaultValue={config.owner} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold mb-1">Repository (المستودع)</label>
-                                    <input name="repo" defaultValue={config.repo} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
-                                </div>
-                                <button type="submit" className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold">حفظ وإتصال</button>
-                                <button type="button" onClick={() => setIsConfigOpen(false)} className="w-full text-gray-400">إلغاء</button>
-                            </form>
-                        </div>
-                    )}
+                    {/* Modals */}
+                    {isConfigOpen && <ConfigModal config={config} onSave={(c) => { 
+                        localStorage.setItem('gh_config', JSON.stringify(c)); 
+                        setConfig(c); 
+                        setIsConfigOpen(false); 
+                        window.location.reload(); 
+                    }} onClose={() => setIsConfigOpen(false)} />}
 
-                    {/* نافذة إضافة سيرفر */}
-                    {isFormOpen && (
-                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const fd = new FormData(e.target);
-                                const newServer = { id: Date.now(), name: fd.get('name'), endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() };
-                                saveData([newServer, ...servers]);
-                                setIsFormOpen(false);
-                            }} className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
-                                <h2 className="font-bold text-lg">إضافة سيرفر جديد</h2>
-                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
-                                <select name="dur" className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500">
-                                    <option value="1">شهر واحد</option>
-                                    <option value="12">سنة كاملة</option>
-                                </select>
-                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg">حفظ سحابي</button>
-                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400">إلغاء</button>
-                            </form>
+                    {isFormOpen && <ServerForm server={editingServer} onSave={handleAddOrUpdate} onClose={() => setIsFormOpen(false)} loading={loading} />}
+                </div>
+            );
+        };
+
+        // --- Sub Components ---
+        const StatCard = ({ label, val, color, active, onClick }) => {
+            const colors = {
+                blue: 'border-blue-200 bg-blue-50 text-blue-700',
+                red: 'border-red-200 bg-red-50 text-red-700',
+                orange: 'border-orange-200 bg-orange-50 text-orange-700',
+                green: 'border-green-200 bg-green-50 text-green-700'
+            };
+            return (
+                <button onClick={onClick} className={`p-4 rounded-2xl border-2 transition-all text-right ${active ? colors[color] + ' scale-105 shadow-md' : 'bg-white border-transparent hover:border-gray-200 text-gray-600'}`}>
+                    <p className="text-sm opacity-80">{label}</p>
+                    <p className="text-2xl font-black">{val}</p>
+                </button>
+            );
+        };
+
+        const ServerCard = ({ server, onEdit, onDelete }) => {
+            const isExpired = new Date() > new Date(server.endDate);
+            const statusColor = isExpired ? 'red' : (!server.isPaid ? 'orange' : 'green');
+            
+            return (
+                <div className={`bg-white rounded-2xl border-2 p-5 transition-all animate-in hover:shadow-lg ${isExpired ? 'border-red-100 bg-red-50/30' : 'border-white shadow-sm'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-xl ${isExpired ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                                <ServerIcon size={22} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 line-clamp-1">{server.name}</h3>
+                                <div className="flex gap-2 mt-1">
+                                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold uppercase">{server.type}</span>
+                                    {!server.isPaid && <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">غير خالص</span>}
+                                </div>
+                            </div>
                         </div>
-                    )}
+                        <div className="flex gap-1">
+                            <button onClick={onEdit} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit size={16}/></button>
+                            <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-gray-600">
+                        <div className="flex justify-between"><span>تاريخ الانتهاء:</span> <span className={`font-bold ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>{new Date(server.endDate).toLocaleDateString('ar-EG')}</span></div>
+                        <div className="flex justify-between items-center">
+                            <span>الرابط:</span> 
+                            <a href={server.url} target="_blank" className="text-blue-600 truncate max-w-[140px] hover:underline" dir="ltr">{server.url}</a>
+                        </div>
+                    </div>
+
+                    <div className={`mt-4 py-2 rounded-xl text-center text-xs font-bold border ${isExpired ? 'bg-red-100 border-red-200 text-red-700' : (!server.isPaid ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-green-50 border-green-100 text-green-700')}`}>
+                        {isExpired ? '⚠️ انتهى الاشتراك' : (server.isPaid ? '✅ نشط ومدفوع' : '⏳ بانتظار الدفع')}
+                    </div>
+                </div>
+            );
+        };
+
+        const ServerForm = ({ server, onSave, onClose, loading }) => {
+            const [fd, setFd] = useState(server || { name: '', type: 'فاميلي', duration: 1, url: '', isPaid: true });
+            
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <form onSubmit={(e) => { e.preventDefault(); onSave(fd); }} className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in">
+                        <div className="bg-blue-600 p-6 text-white flex justify-between items-center">
+                            <h2 className="text-xl font-bold">{server ? 'تعديل السيرفر' : 'إضافة سيرفر جديد'}</h2>
+                            <button type="button" onClick={onClose}><X /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">اسم السيرفر (بالعربي)</label>
+                                <input required value={fd.name} onChange={e => setFd({...fd, name: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" placeholder="مثال: سيرفر العائلة" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">النوع</label>
+                                    <select value={fd.type} onChange={e => setFd({...fd, type: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none bg-white">
+                                        <option value="فاميلي">فاميلي</option>
+                                        <option value="نيو">نيو</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">مدة الاشتراك</label>
+                                    <select value={fd.duration} onChange={e => setFd({...fd, duration: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none bg-white">
+                                        <option value="1">شهر واحد</option>
+                                        <option value="3">3 أشهر</option>
+                                        <option value="6">6 أشهر</option>
+                                        <option value="12">سنة كاملة</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-1">رابط السيرفر</label>
+                                <input required value={fd.url} onChange={e => setFd({...fd, url: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none text-left" dir="ltr" placeholder="https://..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-1">حالة الدفع</label>
+                                <select value={fd.isPaid} onChange={e => setFd({...fd, isPaid: e.target.value === 'true'})} className={`w-full border-2 p-3 rounded-xl outline-none bg-white font-bold ${fd.isPaid ? 'text-green-600' : 'text-orange-600'}`}>
+                                    <option value="true">خالص ✅</option>
+                                    <option value="false">غير خالص ❌</option>
+                                </select>
+                            </div>
+                            <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 flex justify-center items-center gap-2">
+                                {loading ? <RefreshCw className="animate-spin" /> : <Save />} {server ? 'تحديث البيانات' : 'حفظ سحابي'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
+        const ConfigModal = ({ config, onSave, onClose }) => {
+            const [c, setC] = useState(config);
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+                    <form onSubmit={(e) => { e.preventDefault(); onSave(c); }} className="bg-white rounded-3xl w-full max-w-md p-8 space-y-5 animate-in">
+                        <div className="text-center space-y-2">
+                            <div className="bg-slate-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-slate-600"><Database size={32} /></div>
+                            <h2 className="text-2xl font-black text-slate-800">إعدادات GitHub Sync</h2>
+                            <p className="text-sm text-gray-500">هذه البيانات تُحفظ في متصفحك فقط للربط السحابي.</p>
+                        </div>
+                        <div className="space-y-3">
+                            <input type="password" placeholder="GitHub Personal Token" value={c.token} onChange={e => setC({...c, token: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
+                            <input placeholder="GitHub Username" value={c.owner} onChange={e => setC({...c, owner: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
+                            <input placeholder="Repository Name" value={c.repo} onChange={e => setC({...c, repo: e.target.value})} className="w-full border-2 p-3 rounded-xl outline-none focus:border-blue-500" required />
+                        </div>
+                        <button type="submit" className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-xl">حفظ وإتصال</button>
+                        <button type="button" onClick={onClose} className="w-full text-gray-400 font-medium">إغاق</button>
+                    </form>
                 </div>
             );
         };
