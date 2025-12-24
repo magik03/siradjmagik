@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>مدير السيرفرات</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Babel for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+      body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
+      .animate-fade-in-up { animation: fadeInUp 0.3s ease-out; }
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+    
+    <!-- Import Map for React and Lucide Icons -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
+      import React, { useState, useEffect } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import { 
+        Trash2, Edit, Calendar, Link as LinkIcon, Server as ServerIcon, 
+        AlertTriangle, CheckCircle2, AlertCircle, Save, X, DollarSign,
+        Plus, Search, Database, Filter, XCircle
+      } from 'lucide-react';
+
+      // --- CONSTANTS & ENUMS ---
+      const ServerType = {
+        FAMILY: 'فاميلي',
+        NEO: 'نيو',
+      };
+
+      const ServerDuration = {
+        ONE_MONTH: 1,
+        THREE_MONTHS: 3,
+        SIX_MONTHS: 6,
+        ONE_YEAR: 12,
+      };
+
+      // --- COMPONENT: ServerCard ---
+      const ServerCard = ({ server, onEdit, onDelete }) => {
+        const isExpired = new Date() > new Date(server.endDate);
+        
+        const formatDate = (dateString) => {
+          return new Date(dateString).toLocaleDateString('ar-EG', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
+        };
+
+        const getDurationLabel = (duration) => {
+          switch (duration) {
+            case ServerDuration.ONE_MONTH: return 'شهر واحد';
+            case ServerDuration.THREE_MONTHS: return '3 أشهر';
+            case ServerDuration.SIX_MONTHS: return '6 أشهر';
+            case ServerDuration.ONE_YEAR: return 'سنة واحدة';
+            default: return '';
+          }
+        };
+
+        return (
+          <div className={`relative bg-white rounded-xl shadow-sm border transition-all duration-300 ${
+            isExpired 
+              ? 'border-red-100 bg-red-50/50' 
+              : 'border-gray-100 hover:shadow-md'
+          }`}>
+            <div className={`p-5 ${isExpired ? 'opacity-75 grayscale-[0.5]' : ''}`}>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${
+                    isExpired ? 'bg-gray-200 text-gray-500' : 
+                    !server.isPaid ? 'bg-orange-100 text-orange-600' : 
+                    'bg-blue-100 text-blue-600'
+                  }`}>
+                    <ServerIcon size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-800 line-clamp-1">{server.name}</h3>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full border border-gray-200">
+                        {server.type}
+                      </span>
+                      {!server.isPaid && (
+                        <span className="text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full border border-orange-200 flex items-center gap-1">
+                          <AlertCircle size={10} /> غير خالص
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-1 z-10">
+                  <button 
+                    onClick={() => onEdit(server)}
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="تعديل"
+                  >
+                    <Edit size={18} />
+                  </button>
+                  <button 
+                    onClick={() => onDelete(server.id)}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="حذف"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Calendar size={16} />
+                    <span>البداية:</span>
+                  </div>
+                  <span className="font-medium">{formatDate(server.startDate)}</span>
+                </div>
+                
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Calendar size={16} />
+                    <span>الانتهاء:</span>
+                  </div>
+                  <span className={`font-medium ${isExpired ? 'text-red-600' : 'text-gray-800'}`}>
+                    {formatDate(server.endDate)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <LinkIcon size={16} />
+                    <span>الرابط:</span>
+                  </div>
+                  <a href={server.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline max-w-[150px] truncate direction-ltr text-left" dir="ltr">
+                    {server.url}
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer / Status Bar */}
+            <div className="px-5 pb-4 pt-0">
+              {isExpired ? (
+                <div className="flex items-center gap-2 text-red-600 bg-red-100/50 p-2 rounded-lg justify-center border border-red-100">
+                  <AlertTriangle size={18} />
+                  <span className="font-bold text-sm">⚠️ انتهت مدة السيرفر</span>
+                </div>
+              ) : (
+                <div className={`flex items-center gap-2 p-2 rounded-lg justify-center border ${
+                  !server.isPaid 
+                    ? 'bg-orange-50 text-orange-700 border-orange-100' 
+                    : 'bg-green-50 text-green-700 border-green-100'
+                }`}>
+                  {server.isPaid ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                  <span className="font-bold text-sm">
+                    {server.isPaid ? `نشط (${getDurationLabel(server.duration)})` : 'اشتراك غير مدفوع'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: ServerForm ---
+      const ServerForm = ({ initialData, onSubmit, onCancel }) => {
+        const [formData, setFormData] = useState({
+          name: '',
+          duration: ServerDuration.ONE_MONTH,
+          type: ServerType.FAMILY,
+          url: '',
+          isPaid: true,
+        });
+
+        const [errors, setErrors] = useState({});
+
+        useEffect(() => {
+          if (initialData) {
+            setFormData({
+              name: initialData.name,
+              duration: initialData.duration,
+              type: initialData.type,
+              url: initialData.url,
+              isPaid: initialData.isPaid,
+            });
+          }
+        }, [initialData]);
+
+        const validate = () => {
+          const newErrors = {};
+          const arabicRegex = /^[\u0600-\u06FF\s]+$/;
+          
+          if (!formData.name.trim()) {
+            newErrors.name = 'اسم السيرفر مطلوب';
+          } else if (!arabicRegex.test(formData.name)) {
+            newErrors.name = 'عفواً، الاسم يجب أن يكون باللغة العربية فقط';
+          }
+
+          if (!formData.url.trim()) {
+            newErrors.url = 'رابط السيرفر مطلوب';
+          } 
+
+          setErrors(newErrors);
+          return Object.keys(newErrors).length === 0;
+        };
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          if (validate()) {
+            onSubmit(formData);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fade-in-up">
+              <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
+                <h2 className="text-xl font-bold">
+                  {initialData ? 'تعديل بيانات السيرفر' : 'إضافة سيرفر جديد'}
+                </h2>
+                <button onClick={onCancel} className="p-1 hover:bg-blue-700 rounded-full transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">اسم السيرفر</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                      errors.name 
+                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500' 
+                        : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
+                    }`}
+                    placeholder="مثال: سيرفر العائلة"
+                  />
+                  {errors.name && <p className="mt-1 text-sm text-red-500">{errors.name}</p>}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">نوع السيرفر</label>
+                    <div className="flex gap-4 mt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="type"
+                          value={ServerType.FAMILY}
+                          checked={formData.type === ServerType.FAMILY}
+                          onChange={() => setFormData({ ...formData, type: ServerType.FAMILY })}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-800">فاميلي</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="type"
+                          value={ServerType.NEO}
+                          checked={formData.type === ServerType.NEO}
+                          onChange={() => setFormData({ ...formData, type: ServerType.NEO })}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-800">نيو</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">حالة الدفع</label>
+                    <select
+                      value={formData.isPaid ? 'true' : 'false'}
+                      onChange={(e) => setFormData({ ...formData, isPaid: e.target.value === 'true' })}
+                      className={`w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 ${formData.isPaid ? 'bg-green-50 text-green-700 focus:ring-green-200' : 'bg-red-50 text-red-700 focus:ring-red-200'}`}
+                    >
+                      <option value="true">خالص ✅</option>
+                      <option value="false">غير خالص ❌</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">المدة</label>
+                  <select
+                    value={formData.duration}
+                    onChange={(e) => setFormData({ ...formData, duration: Number(e.target.value) })}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-200 focus:border-blue-500 focus:outline-none bg-white"
+                  >
+                    <option value={ServerDuration.ONE_MONTH}>شهر واحد</option>
+                    <option value={ServerDuration.THREE_MONTHS}>3 أشهر</option>
+                    <option value={ServerDuration.SIX_MONTHS}>6 أشهر</option>
+                    <option value={ServerDuration.ONE_YEAR}>سنة كاملة</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">رابط السيرفر</label>
+                  <input
+                    type="text"
+                    value={formData.url}
+                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                    className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:outline-none transition-all text-left ${
+                      errors.url
+                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
+                    }`}
+                    dir="ltr"
+                    placeholder="https://example.com"
+                  />
+                  {errors.url && <p className="mt-1 text-sm text-red-500">{errors.url}</p>}
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-medium"
+                  >
+                    <Save size={18} />
+                    <span>حفظ البيانات</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: App ---
+      const App = () => {
+        const [servers, setServers] = useState([]);
+        const [isFormOpen, setIsFormOpen] = useState(false);
+        const [editingServer, setEditingServer] = useState(null);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [activeFilter, setActiveFilter] = useState('all');
+
+        useEffect(() => {
+          const savedServers = localStorage.getItem('my_servers');
+          if (savedServers) {
+            try {
+              setServers(JSON.parse(savedServers));
+            } catch (e) {
+              console.error('Failed to parse servers', e);
+            }
+          }
+        }, []);
+
+        useEffect(() => {
+          localStorage.setItem('my_servers', JSON.stringify(servers));
+        }, [servers]);
+
+        const calculateEndDate = (startDate, months) => {
+          const endDate = new Date(startDate);
+          endDate.setMonth(endDate.getMonth() + months);
+          return endDate;
+        };
+
+        const handleAddServer = (data) => {
+          const now = new Date();
+          const newServer = {
+            id: crypto.randomUUID(),
+            ...data,
+            startDate: now.toISOString(),
+            endDate: calculateEndDate(now, data.duration).toISOString(),
+          };
+          setServers([newServer, ...servers]);
+          setIsFormOpen(false);
+          setActiveFilter('all');
+        };
+
+        const handleUpdateServer = (data) => {
+          if (!editingServer) return;
+          const updatedServer = {
+            ...editingServer,
+            ...data,
+            endDate: calculateEndDate(new Date(editingServer.startDate), data.duration).toISOString(),
+          };
+          setServers(servers.map(s => s.id === updatedServer.id ? updatedServer : s));
+          setEditingServer(null);
+          setIsFormOpen(false);
+        };
+
+        const handleDeleteServer = (id) => {
+          if (window.confirm('هل أنت متأكد من حذف هذا السيرفر؟')) {
+            setServers(servers.filter(s => s.id !== id));
+          }
+        };
+
+        const openEditModal = (server) => {
+          setEditingServer(server);
+          setIsFormOpen(true);
+        };
+
+        const filteredServers = servers.filter(server => {
+          if (searchTerm && !server.name.includes(searchTerm)) return false;
+          const isExpired = new Date() > new Date(server.endDate);
+          switch (activeFilter) {
+            case 'expired': return isExpired;
+            case 'unpaid': return !server.isPaid;
+            case 'active': return server.isPaid && !isExpired;
+            case 'all': default: return true;
+          }
+        });
+
+        const totalCount = servers.length;
+        const expiredCount = servers.filter(s => new Date() > new Date(s.endDate)).length;
+        const unpaidCount = servers.filter(s => !s.isPaid).length;
+        const activeCount = servers.filter(s => s.isPaid && new Date() <= new Date(s.endDate)).length;
+
+        return (
+          <div className="min-h-screen bg-slate-50 text-gray-900 pb-20">
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-600 p-2 rounded-xl text-white shadow-blue-200 shadow-lg cursor-pointer" onClick={() => setActiveFilter('all')}>
+                    <Database size={24} />
+                  </div>
+                  <h1 className="text-2xl font-bold text-gray-800 hidden sm:block">مدير السيرفرات</h1>
+                </div>
+                
+                <div className="flex-1 max-w-md mx-4">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="ابحث عن سيرفر..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-4 pr-10 py-2.5 bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl transition-all outline-none"
+                    />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setEditingServer(null);
+                    setIsFormOpen(true);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-medium transition-colors flex items-center gap-2 shadow-lg shadow-blue-200"
+                >
+                  <Plus size={20} />
+                  <span className="hidden sm:inline">إضافة سيرفر</span>
+                  <span className="sm:hidden">جديد</span>
+                </button>
+              </div>
+            </header>
+
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <button 
+                  onClick={() => setActiveFilter('all')}
+                  className={`p-4 rounded-xl shadow-sm border text-right transition-all duration-200 ${
+                    activeFilter === 'all' 
+                      ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' 
+                      : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md'
+                  }`}
+                >
+                  <p className="text-sm text-gray-500 mb-1">إجمالي السيرفرات</p>
+                  <p className="text-2xl font-bold text-gray-800">{totalCount}</p>
+                </button>
+
+                <button 
+                  onClick={() => setActiveFilter('expired')}
+                  className={`p-4 rounded-xl shadow-sm border text-right transition-all duration-200 ${
+                    activeFilter === 'expired' 
+                      ? 'bg-red-50 border-red-500 ring-1 ring-red-500' 
+                      : 'bg-white border-gray-100 hover:border-red-200 hover:shadow-md'
+                  }`}
+                >
+                  <p className="text-sm text-gray-500 mb-1">السيرفرات المنتهية</p>
+                  <p className="text-2xl font-bold text-red-600">{expiredCount}</p>
+                </button>
+
+                <button 
+                  onClick={() => setActiveFilter('unpaid')}
+                  className={`p-4 rounded-xl shadow-sm border text-right transition-all duration-200 ${
+                    activeFilter === 'unpaid' 
+                      ? 'bg-orange-50 border-orange-500 ring-1 ring-orange-500' 
+                      : 'bg-white border-gray-100 hover:border-orange-200 hover:shadow-md'
+                  }`}
+                >
+                  <p className="text-sm text-gray-500 mb-1">غير خالص</p>
+                  <p className="text-2xl font-bold text-orange-500">{unpaidCount}</p>
+                </button>
+
+                <button 
+                  onClick={() => setActiveFilter('active')}
+                  className={`p-4 rounded-xl shadow-sm border text-right transition-all duration-200 ${
+                    activeFilter === 'active' 
+                      ? 'bg-green-50 border-green-500 ring-1 ring-green-500' 
+                      : 'bg-white border-gray-100 hover:border-green-200 hover:shadow-md'
+                  }`}
+                >
+                  <p className="text-sm text-gray-500 mb-1">نشط ومدفوع</p>
+                  <p className="text-2xl font-bold text-green-600">{activeCount}</p>
+                </button>
+              </div>
+
+              {activeFilter !== 'all' && (
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-sm text-gray-500">تصفية حسب:</span>
+                  <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-200 rounded-full text-sm font-medium text-gray-700 shadow-sm">
+                    {activeFilter === 'expired' && <span className="text-red-600">منتهي الصلاحية</span>}
+                    {activeFilter === 'unpaid' && <span className="text-orange-600">غير خالص</span>}
+                    {activeFilter === 'active' && <span className="text-green-600">نشط ومدفوع</span>}
+                    <button 
+                      onClick={() => setActiveFilter('all')}
+                      className="hover:bg-gray-100 p-0.5 rounded-full transition-colors ml-1 text-gray-400 hover:text-gray-600"
+                    >
+                      <XCircle size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {filteredServers.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredServers.map((server) => (
+                    <ServerCard
+                      key={server.id}
+                      server={server}
+                      onEdit={openEditModal}
+                      onDelete={handleDeleteServer}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in-up">
+                  <div className="bg-gray-100 p-6 rounded-full mb-4">
+                    {activeFilter === 'all' ? (
+                      <ServerIcon size={48} className="text-gray-400" />
+                    ) : (
+                      <Filter size={48} className="text-gray-400" />
+                    )}
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">
+                    {searchTerm 
+                      ? 'لا توجد نتائج للبحث' 
+                      : activeFilter !== 'all' 
+                        ? 'لا توجد سيرفرات في هذا التصنيف'
+                        : 'لا توجد سيرفرات مضافة'
+                    }
+                  </h3>
+                  <p className="text-gray-500 max-w-sm mx-auto mb-6">
+                    {searchTerm 
+                      ? 'جرب البحث باسم آخر' 
+                      : activeFilter !== 'all'
+                        ? 'جرب تغيير الفلتر أو إضافة سيرفرات جديدة.'
+                        : 'قم بإضافة سيرفر جديد للبدء في تتبع اشتراكاتك ومواعيد الانتهاء بسهولة.'
+                    }
+                  </p>
+                  {activeFilter === 'all' && !searchTerm && (
+                    <button
+                      onClick={() => setIsFormOpen(true)}
+                      className="text-blue-600 font-medium hover:underline"
+                    >
+                      إضافة سيرفر الآن
+                    </button>
+                  )}
+                  {activeFilter !== 'all' && (
+                    <button
+                      onClick={() => setActiveFilter('all')}
+                      className="text-blue-600 font-medium hover:underline"
+                    >
+                      عرض الكل
+                    </button>
+                  )}
+                </div>
+              )}
+            </main>
+
+            {isFormOpen && (
+              <ServerForm
+                initialData={editingServer}
+                onSubmit={editingServer ? handleUpdateServer : handleAddServer}
+                onCancel={() => {
+                  setIsFormOpen(false);
+                  setEditingServer(null);
+                }}
+              />
+            )}
+          </div>
+        );
+      };
+
+      const root = createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
