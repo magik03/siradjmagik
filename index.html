@@ -1,149 +1,253 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات - تشخيص الأعطال</title>
+    <title>مدير السيرفرات السحابي | magik03</title>
+    <!-- Tailwind CSS & Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <!-- React & Firebase Scripts -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="importmap"> { "imports": { "react": "https://esm.sh/react@18.2.0", "react-dom/client": "https://esm.sh/react-dom@18.2.0/client", "lucide-react": "https://esm.sh/lucide-react@0.292.0" } } </script>
-    <style>body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }</style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0"
+      }
+    }
+    </script>
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
+        .server-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .server-card:hover { transform: translateY(-5px); }
+        .animate-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </head>
 <body>
     <div id="root"></div>
+
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect } from 'react';
+        import React, { useState, useEffect, useMemo } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Trash2, Calendar, Server, Plus, RefreshCw, Settings, X, ShieldAlert, CheckCircle } from 'lucide-react';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { Trash2, Calendar, Server, Plus, RefreshCw, Globe, CheckCircle, AlertCircle, Search, X, Link as LinkIcon } from 'lucide-react';
+
+        // إعدادات مشروعك التي قمت بتجهيزها
+        const firebaseConfig = {
+            apiKey: "AIzaSyBcBeibsLsTfnTwW9q1i_oq0eN5MU5xBck",
+            authDomain: "siradjmagik.firebaseapp.com",
+            projectId: "siradjmagik",
+            storageBucket: "siradjmagik.firebasestorage.app",
+            messagingSenderId: "826120620228",
+            appId: "1:826120620228:web:0214400eb6141c0ff2e191"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
 
         const App = () => {
             const [servers, setServers] = useState([]);
-            const [loading, setLoading] = useState(false);
+            const [loading, setLoading] = useState(true);
             const [isFormOpen, setIsFormOpen] = useState(false);
-            const [isConfigOpen, setIsConfigOpen] = useState(false);
-            const [errorMsg, setErrorMsg] = useState('');
-            
-            const [config, setConfig] = useState(() => {
-                const saved = localStorage.getItem('gh_config');
-                return saved ? JSON.parse(saved) : { token: '', owner: 'magik03', repo: 'siradjmagik', path: 'servers.json' };
-            });
+            const [searchTerm, setSearchTerm] = useState('');
+            const [activeFilter, setActiveFilter] = useState('all');
 
+            // --- جلب البيانات من Firebase ---
             useEffect(() => {
-                if (config.token) loadData();
-                else setIsConfigOpen(true);
+                const serversRef = ref(db, 'servers');
+                onValue(serversRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+                        setServers(list.reverse());
+                    } else {
+                        setServers([]);
+                    }
+                    setLoading(false);
+                });
             }, []);
 
-            const loadData = async () => {
-                const tk = config.token.trim();
-                if (!tk) return;
-                setLoading(true);
-                setErrorMsg('');
-                try {
-                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { 'Authorization': `token ${tk}`, 'Cache-Control': 'no-cache' }
-                    });
-                    
-                    if (res.status === 401) throw new Error("التوكن (المفتاح) غير صحيح أو تم إلغاؤه من GitHub (خطأ 401)");
-                    if (res.status === 404) throw new Error("لم يتم العثور على الملف أو المستودع. تأكد من الاسم (خطأ 404)");
-                    if (!res.ok) throw new Error("حدث خطأ غير متوقع: " + res.status);
+            const handleAdd = (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const duration = parseInt(fd.get('dur'));
+                const startDate = new Date();
+                const endDate = new Date();
+                endDate.setMonth(startDate.getMonth() + duration);
 
-                    const data = await res.json();
-                    setServers(JSON.parse(decodeURIComponent(escape(atob(data.content)))));
-                    setErrorMsg(''); // نجاح
-                } catch (err) {
-                    setErrorMsg(err.message);
-                } finally {
-                    setLoading(false);
+                const newServer = {
+                    name: fd.get('name'),
+                    type: fd.get('type'),
+                    url: fd.get('url'),
+                    isPaid: fd.get('isPaid') === 'true',
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
+                };
+
+                push(ref(db, 'servers'), newServer);
+                setIsFormOpen(false);
+            };
+
+            const handleDelete = (id) => {
+                if (confirm('هل أنت متأكد من الحذف؟')) {
+                    remove(ref(db, `servers/${id}`));
                 }
             };
 
-            const saveData = async (newList) => {
-                const tk = config.token.trim();
-                setLoading(true);
-                try {
-                    const getRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { 'Authorization': `token ${tk}`, 'Cache-Control': 'no-cache' }
-                    });
-                    const getData = await getRes.json();
-                    const content = btoa(unescape(encodeURIComponent(JSON.stringify(newList, null, 2))));
-                    const putRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${tk}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: "Update", content, sha: getData.sha })
-                    });
-                    if (putRes.ok) { setServers(newList); alert("✅ تم الحفظ بنجاح!"); setIsFormOpen(false); }
-                    else alert("❌ فشل الحفظ");
-                } catch (e) { alert("❌ خطأ اتصال"); }
-                finally { setLoading(false); }
-            };
+            const stats = useMemo(() => {
+                const now = new Date();
+                return {
+                    total: servers.length,
+                    expired: servers.filter(s => now > new Date(s.endDate)).length,
+                    active: servers.filter(s => s.isPaid && now <= new Date(s.endDate)).length,
+                    unpaid: servers.filter(s => !s.isPaid).length
+                };
+            }, [servers]);
+
+            const filtered = servers.filter(s => {
+                const match = s.name.toLowerCase().includes(searchTerm.toLowerCase());
+                const isExpired = new Date() > new Date(s.endDate);
+                if (activeFilter === 'expired') return match && isExpired;
+                if (activeFilter === 'unpaid') return match && !s.isPaid;
+                if (activeFilter === 'active') return match && s.isPaid && !isExpired;
+                return match;
+            });
 
             return (
-                <div className="min-h-screen">
-                    <nav className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-lg">
-                        <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-sm">
-                           <div className={`w-3 h-3 rounded-full ${errorMsg ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`}></div>
-                           magik03 Cloud
+                <div className="min-h-screen pb-10">
+                    <header className="bg-slate-900 text-white p-4 sticky top-0 z-50 shadow-lg">
+                        <div className="max-w-6xl mx-auto flex justify-between items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-blue-600 p-2 rounded-xl"><Server size={22}/></div>
+                                <h1 className="font-black text-xl hidden sm:block">مدير السيرفرات السحابي</h1>
+                            </div>
+                            <div className="flex-1 max-w-sm relative">
+                                <input 
+                                    placeholder="بحث باسم السيرفر..." 
+                                    className="w-full bg-slate-800 border-none p-2 pr-10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                                <Search className="absolute right-3 top-2.5 text-slate-500" size={16}/>
+                            </div>
+                            <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all">
+                                <Plus size={20}/> <span className="hidden sm:inline">إضافة</span>
+                            </button>
                         </div>
-                        <div className="flex gap-2">
-                            <button onClick={loadData} className="p-2 bg-slate-700 rounded-xl"><RefreshCw size={20} className={loading ? 'animate-spin' : ''}/></button>
-                            <button onClick={() => setIsConfigOpen(true)} className="p-2 bg-slate-700 rounded-xl"><Settings size={20}/></button>
-                            <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 px-4 py-2 rounded-xl font-bold">+ إضافة</button>
-                        </div>
-                    </nav>
+                    </header>
 
-                    <main className="p-6 max-w-4xl mx-auto">
-                        {errorMsg && (
-                            <div className="bg-red-50 border-2 border-red-100 p-4 rounded-2xl mb-6 text-red-600 flex items-start gap-3 animate-fade-in">
-                                <ShieldAlert className="shrink-0" />
-                                <div className="text-sm font-bold">{errorMsg}</div>
+                    <main className="max-w-6xl mx-auto p-4 sm:p-6">
+                        {/* الإحصائيات */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                            <StatBox label="الإجمالي" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
+                            <StatBox label="المنتهية" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
+                            <StatBox label="غير خالص" val={stats.unpaid} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
+                            <StatBox label="النشطة" val={stats.active} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
+                        </div>
+
+                        {loading ? (
+                            <div className="text-center py-20"><RefreshCw className="animate-spin inline text-blue-600" size={40}/></div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filtered.length === 0 && <div className="col-span-full text-center text-gray-400 py-10">لا توجد سيرفرات حالياً..</div>}
+                                {filtered.map(s => (
+                                    <ServerCard key={s.id} s={s} onDelete={() => handleDelete(s.id)} />
+                                ))}
                             </div>
                         )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {servers.map(s => (
-                                <div key={s.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start">
-                                    <div><h3 className="font-bold">{s.name}</h3><p className="text-xs text-slate-400 font-bold">{new Date(s.endDate).toLocaleDateString('ar-EG')}</p></div>
-                                    <button onClick={() => {if(confirm('حذف؟')) saveData(servers.filter(x=>x.id!==s.id))}} className="text-slate-200 hover:text-red-500"><Trash2 size={20}/></button>
-                                </div>
-                            ))}
-                        </div>
                     </main>
 
-                    {isConfigOpen && (
-                        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4 z-50">
-                            <div className="bg-white p-8 rounded-[2rem] w-full max-w-md shadow-2xl">
-                                <h2 className="text-2xl font-black mb-2">ربط GitHub</h2>
-                                <p className="text-xs text-slate-400 mb-6 font-bold">ضع التوكن (المفتاح) الجديد الذي أنشأته للتو.</p>
-                                <input id="tk" type="password" defaultValue={config.token} placeholder="الصق ghp_ هنا" className="w-full border-2 p-4 rounded-2xl mb-4 outline-none focus:border-blue-500" />
-                                <button onClick={() => {
-                                    const tk = document.getElementById('tk').value;
-                                    localStorage.setItem('gh_config', JSON.stringify({...config, token: tk}));
-                                    window.location.reload();
-                                }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">تنشيط الإتصال</button>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* نافذة الإضافة */}
                     {isFormOpen && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-40 backdrop-blur-sm">
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const fd = new FormData(e.target);
-                                const newS = { id: Date.now(), name: fd.get('name'), endDate: new Date(Date.now() + fd.get('dur') * 30 * 24 * 60 * 60 * 1000).toISOString() };
-                                saveData([newS, ...servers]);
-                            }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm space-y-4 shadow-2xl">
-                                <h2 className="font-black text-xl">سيرفر جديد</h2>
-                                <input name="name" placeholder="اسم السيرفر" className="w-full border-2 p-4 rounded-2xl outline-none" required />
-                                <select name="dur" className="w-full border-2 p-4 rounded-2xl bg-white"><option value="1">شهر</option><option value="12">سنة</option></select>
-                                <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">{loading ? "جاري الحفظ..." : "حفظ في السحاب"}</button>
-                                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-slate-400 font-bold text-sm">إلغاء</button>
+                        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <form onSubmit={handleAdd} className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl animate-in">
+                                <div className="bg-blue-600 p-6 text-white flex justify-between items-center">
+                                    <h2 className="text-xl font-black">إضافة سيرفر جديد</h2>
+                                    <button type="button" onClick={() => setIsFormOpen(false)}><X/></button>
+                                </div>
+                                <div className="p-8 space-y-4">
+                                    <input name="name" placeholder="اسم السيرفر" required className="w-full border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500"/>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <select name="type" className="border-2 border-gray-100 p-4 rounded-2xl bg-white outline-none">
+                                            <option value="فاميلي">فاميلي</option>
+                                            <option value="نيو">نيو</option>
+                                        </select>
+                                        <select name="dur" className="border-2 border-gray-100 p-4 rounded-2xl bg-white outline-none">
+                                            <option value="1">شهر</option>
+                                            <option value="3">3 أشهر</option>
+                                            <option value="6">6 أشهر</option>
+                                            <option value="12">سنة</option>
+                                        </select>
+                                    </div>
+                                    <input name="url" placeholder="رابط السيرفر" required className="w-full border-2 border-gray-100 p-4 rounded-2xl outline-none text-left font-bold text-blue-600" dir="ltr"/>
+                                    <select name="isPaid" className="w-full border-2 border-gray-100 p-4 rounded-2xl bg-white outline-none font-bold text-green-600">
+                                        <option value="true">مدفوع ✓</option>
+                                        <option value="false">غير خالص ⚠</option>
+                                    </select>
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg">حفظ في السحابة</button>
+                                </div>
                             </form>
                         </div>
                     )}
                 </div>
             );
         };
-        createRoot(document.getElementById('root')).render(<App />);
+
+        const StatBox = ({ label, val, color, active, onClick }) => {
+            const themes = {
+                blue: 'border-blue-100 bg-blue-50 text-blue-700',
+                red: 'border-red-100 bg-red-50 text-red-700',
+                orange: 'border-orange-100 bg-orange-50 text-orange-700',
+                green: 'border-green-100 bg-green-50 text-green-700'
+            };
+            return (
+                <button onClick={onClick} className={`p-4 rounded-2xl border-2 transition-all text-right ${active ? themes[color] + ' shadow-md scale-105' : 'bg-white border-transparent text-gray-500'}`}>
+                    <p className="text-[10px] font-bold uppercase mb-1">{label}</p>
+                    <p className="text-2xl font-black">{val}</p>
+                </button>
+            );
+        };
+
+        const ServerCard = ({ s, onDelete }) => {
+            const isExpired = new Date() > new Date(s.endDate);
+            return (
+                <div className={`server-card bg-white p-6 rounded-[2rem] shadow-sm border-2 animate-in ${isExpired ? 'border-red-100' : 'border-white'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}><Server size={24}/></div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 text-lg leading-tight">{s.name}</h3>
+                                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-md font-bold text-gray-400">{s.type}</span>
+                            </div>
+                        </div>
+                        <button onClick={onDelete} className="text-gray-200 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-gray-500">ينتهي في:</span>
+                            <span className={`font-bold ${isExpired ? 'text-red-500' : 'text-gray-900'}`}>{new Date(s.endDate).toLocaleDateString('ar-EG')}</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-gray-500 text-xs">رابط السيرفر:</span>
+                            <a href={s.url} target="_blank" className="text-blue-600 font-bold underline truncate text-xs" dir="ltr">{s.url}</a>
+                        </div>
+                    </div>
+
+                    <div className={`mt-5 py-2 rounded-xl text-center font-bold text-xs ${isExpired ? 'bg-red-50 text-red-600' : (s.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600')}`}>
+                        {isExpired ? '⚠️ منتهي الصلاحية' : (s.isPaid ? '✅ مدفوع ونشط' : '⏳ بانتظار الدفع')}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
