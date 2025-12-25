@@ -3,20 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات | Dashboard</title>
+    <title>مدير السيرفرات المتطور | تحرير التواريخ</title>
     
-    <!-- Tailwind CSS & Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
         .server-card { transition: all 0.3s ease; }
         .server-card:hover { transform: translateY(-5px); }
         .expired-status { background-color: #fef2f2; border-color: #fecaca; }
         .animate-fade { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-red { animation: pulse-red-animation 2s infinite; }
+        @keyframes pulse-red-animation {
+            0% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0); }
+        }
     </style>
 
     <script type="importmap">
@@ -38,12 +43,12 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue, push, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
         import { 
-            Trash2, Calendar, Server, Plus, RefreshCw, 
+            Trash2, Edit, Calendar, Server, Plus, RefreshCw, 
             Search, X, CheckCircle2, AlertTriangle, Clock, 
             LayoutDashboard, HardDrive, Filter, DollarSign
         } from 'lucide-react';
 
-        // --- إعدادات Firebase الخاصة بك ---
+        // --- إعدادات Firebase ---
         const firebaseConfig = {
             apiKey: "AIzaSyBcBeibsLsTfnTwW9q1i_oq0eN5MU5xBck",
             authDomain: "siradjmagik.firebaseapp.com",
@@ -61,10 +66,10 @@
             const [servers, setServers] = useState([]);
             const [loading, setLoading] = useState(true);
             const [isFormOpen, setIsFormOpen] = useState(false);
+            const [editingServer, setEditingServer] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
-            const [activeFilter, setActiveFilter] = useState('all'); // all, expired, unpaid, active
+            const [activeFilter, setActiveFilter] = useState('all');
 
-            // جلب البيانات
             useEffect(() => {
                 const serversRef = ref(db, 'servers');
                 onValue(serversRef, (snapshot) => {
@@ -77,34 +82,44 @@
                 });
             }, []);
 
-            // إضافة سيرفر
-            const handleAdd = (e) => {
+            const handleSave = (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
                 const duration = parseInt(fd.get('dur'));
-                const start = new Date();
-                const end = new Date();
+                
+                // استخدام التاريخ المدخل يدوياً من النموذج
+                const manualStartDate = fd.get('startDate'); 
+                let start = new Date(manualStartDate);
+                let end = new Date(start);
                 end.setMonth(start.getMonth() + duration);
 
-                const newServer = {
+                const serverData = {
                     name: fd.get('name'),
                     type: fd.get('type'),
                     identifier: fd.get('identifier'),
                     isPaid: fd.get('isPaid') === 'true',
                     startDate: start.toISOString(),
-                    endDate: end.toISOString()
+                    endDate: end.toISOString(),
+                    duration: duration
                 };
 
-                push(ref(db, 'servers'), newServer);
+                if (editingServer) {
+                    update(ref(db, `servers/${editingServer.id}`), serverData);
+                } else {
+                    push(ref(db, 'servers'), serverData);
+                }
+
                 setIsFormOpen(false);
+                setEditingServer(null);
             };
 
             const handleDelete = (id) => {
                 if(confirm('هل تريد الحذف؟')) remove(ref(db, `servers/${id}`));
             };
 
-            const togglePaid = (id, current) => {
-                update(ref(db, `servers/${id}`), { isPaid: !current });
+            const openEdit = (server) => {
+                setEditingServer(server);
+                setIsFormOpen(true);
             };
 
             const getDaysLeft = (date) => {
@@ -112,7 +127,12 @@
                 return Math.ceil(diff / (1000 * 60 * 60 * 24));
             };
 
-            // حساب الإحصائيات
+            // تحويل تاريخ ISO إلى صيغة YYYY-MM-DD لتظهر في مدخل التاريخ
+            const formatDateForInput = (isoString) => {
+                if (!isoString) return new Date().toISOString().split('T')[0];
+                return new Date(isoString).toISOString().split('T')[0];
+            };
+
             const stats = useMemo(() => {
                 const now = new Date();
                 return {
@@ -123,14 +143,12 @@
                 };
             }, [servers]);
 
-            // منطق الفلترة والبحث
             const filteredServers = useMemo(() => {
                 return servers.filter(s => {
-                    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                         s.type.toLowerCase().includes(searchTerm.toLowerCase());
+                    const match = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                  s.type.toLowerCase().includes(searchTerm.toLowerCase());
                     const isExpired = new Date() > new Date(s.endDate);
-                    
-                    if (!matchesSearch) return false;
+                    if (!match) return false;
                     if (activeFilter === 'expired') return isExpired;
                     if (activeFilter === 'unpaid') return !s.isPaid;
                     if (activeFilter === 'active') return s.isPaid && !isExpired;
@@ -140,28 +158,18 @@
 
             return (
                 <div className="min-h-screen">
-                    {/* Navbar */}
                     <header className="bg-white border-b sticky top-0 z-40 p-4 shadow-sm">
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-3">
-                                <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
-                                    <LayoutDashboard size={24} />
-                                </div>
-                                <h1 className="font-black text-xl text-gray-800">سيرفراتي السحابية</h1>
+                                <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24} /></div>
+                                <h1 className="font-black text-xl text-gray-800 tracking-tight">لوحة تحكم السيرفرات</h1>
                             </div>
-
                             <div className="flex items-center gap-2 w-full md:w-auto">
                                 <div className="relative flex-1 md:w-80">
-                                    <input 
-                                        type="text" 
-                                        placeholder="بحث بالاسم أو النوع..." 
-                                        className="w-full bg-gray-100 border-none py-2.5 pr-10 pl-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
+                                    <input type="text" placeholder="بحث..." className="w-full bg-gray-100 border-none py-2.5 pr-10 pl-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                                     <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
                                 </div>
-                                <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-100">
+                                <button onClick={() => { setEditingServer(null); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
                                     <Plus size={20} /> إضافة
                                 </button>
                             </div>
@@ -169,71 +177,63 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-4 md:p-8">
-                        {/* فلاتر الإحصائيات التفاعلية */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-                            <StatBox label="إجمالي السيرفرات" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
-                            <StatBox label="اشتراكات منتهية" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
-                            <StatBox label="غير خالص ❌" val={stats.unpaid} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
-                            <StatBox label="نشط ومدفوع" val={stats.active} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
+                            <StatBox label="الكل" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
+                            <StatBox label="منتهي" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
+                            <StatBox label="غير خالص" val={stats.unpaid} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
+                            <StatBox label="نشط" val={stats.active} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
                         </div>
 
-                        {/* عرض السيرفرات */}
                         {loading ? (
                             <div className="flex justify-center py-20"><RefreshCw className="animate-spin text-blue-600" size={40} /></div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {filteredServers.map(s => (
-                                    <ServerCard 
-                                        key={s.id} 
-                                        server={s} 
-                                        daysLeft={getDaysLeft(s.endDate)}
-                                        onDelete={() => handleDelete(s.id)}
-                                        onToggle={() => togglePaid(s.id, s.isPaid)}
-                                    />
+                                    <ServerCard key={s.id} server={s} daysLeft={getDaysLeft(s.endDate)} onDelete={() => handleDelete(s.id)} onEdit={() => openEdit(s)} />
                                 ))}
-                                {filteredServers.length === 0 && (
-                                    <div className="col-span-full text-center py-20 bg-white rounded-[3rem] border-2 border-dashed">
-                                        <p className="text-gray-400 font-bold">لا يوجد نتائج في هذا التصنيف..</p>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </main>
 
-                    {/* نافذة الإضافة */}
                     {isFormOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
-                            <form onSubmit={handleAdd} className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-fade overflow-hidden border-t-8 border-blue-600">
+                            <form onSubmit={handleSave} className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-fade overflow-hidden border-t-8 border-blue-600">
                                 <div className="p-6 flex justify-between items-center border-b">
-                                    <h2 className="text-xl font-black">إضافة اشتراك جديد</h2>
+                                    <h2 className="text-xl font-black">{editingServer ? 'تعديل السيرفر' : 'إضافة سيرفر جديد'}</h2>
                                     <button type="button" onClick={() => setIsFormOpen(false)}><X/></button>
                                 </div>
-                                <div className="p-8 space-y-5">
-                                    <input name="name" required placeholder="اسم السيرفر (عربي أو إنجليزي)" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
+                                <div className="p-8 space-y-4">
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">اسم السيرفر</label>
+                                    <input name="name" defaultValue={editingServer?.name} required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
                                     
-                                    <div className="relative">
-                                        <input name="type" list="types" required placeholder="نوع السيرفر (اختر أو اكتب)" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
-                                        <datalist id="types">
-                                            <option value="فاميلي" /><option value="نيو" />
-                                        </datalist>
-                                    </div>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">النوع</label>
+                                    <input name="type" defaultValue={editingServer?.type} list="types" required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
+                                    <datalist id="types"><option value="فاميلي" /><option value="نيو" /></datalist>
 
-                                    <input name="identifier" required placeholder="رابط السيرفر أو المعرف (ID)" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 text-left" dir="ltr"/>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">المعرف / الرابط</label>
+                                    <input name="identifier" defaultValue={editingServer?.identifier} required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 text-left" dir="ltr"/>
 
                                     <div className="grid grid-cols-2 gap-4">
-                                        <select name="dur" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold">
-                                            <option value="1">شهر واحد</option>
-                                            <option value="3">3 أشهر</option>
-                                            <option value="6">6 أشهر</option>
-                                            <option value="12">سنة كاملة</option>
-                                        </select>
-                                        <select name="isPaid" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold text-green-600">
-                                            <option value="true">خالص ✅</option>
-                                            <option value="false">غير خالص ❌</option>
-                                        </select>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">تاريخ البداية</label>
+                                            <input type="date" name="startDate" defaultValue={formatDateForInput(editingServer?.startDate)} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold" required />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">المدة</label>
+                                            <select name="dur" defaultValue={editingServer?.duration || "1"} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold">
+                                                <option value="1">شهر</option><option value="3">3 أشهر</option><option value="6">6 أشهر</option><option value="12">سنة</option>
+                                            </select>
+                                        </div>
                                     </div>
 
-                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-700 transition-all active:scale-95">حفظ سحابي</button>
+                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">حالة الدفع</label>
+                                    <select name="isPaid" defaultValue={editingServer ? String(editingServer.isPaid) : "true"} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold text-blue-600">
+                                        <option value="true">خالص ✅</option><option value="false">غير خالص ❌</option>
+                                    </select>
+
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-700 transition-all active:scale-95">
+                                        {editingServer ? 'تحديث' : 'حفظ'}
+                                    </button>
                                 </div>
                             </form>
                         </div>
@@ -243,64 +243,40 @@
         };
 
         const StatBox = ({ label, val, color, active, onClick }) => {
-            const colors = {
-                blue: 'border-blue-200 bg-blue-50 text-blue-700',
-                red: 'border-red-200 bg-red-50 text-red-700',
-                orange: 'border-orange-200 bg-orange-50 text-orange-700',
-                green: 'border-green-200 bg-green-50 text-green-700'
-            };
+            const colors = { blue: 'border-blue-200 bg-blue-50 text-blue-700', red: 'border-red-200 bg-red-50 text-red-700', orange: 'border-orange-200 bg-orange-50 text-orange-700', green: 'border-green-200 bg-green-50 text-green-700' };
             return (
-                <button 
-                    onClick={onClick}
-                    className={`p-5 rounded-[2rem] border-2 transition-all duration-300 text-right ${active ? colors[color] + ' shadow-xl scale-105 ring-4 ring-white' : 'bg-white border-transparent text-gray-500 shadow-sm hover:border-gray-200'}`}
-                >
+                <button onClick={onClick} className={`p-5 rounded-[2rem] border-2 transition-all duration-300 text-right ${active ? colors[color] + ' shadow-xl scale-105 ring-4 ring-white' : 'bg-white border-transparent text-gray-500 shadow-sm hover:border-gray-200'}`}>
                     <p className="text-[10px] font-bold uppercase mb-1 opacity-70">{label}</p>
                     <p className="text-3xl font-black leading-none">{val}</p>
                 </button>
             );
         };
 
-        const ServerCard = ({ server, daysLeft, onDelete, onToggle }) => {
+        const ServerCard = ({ server, daysLeft, onDelete, onEdit }) => {
             const isExpired = daysLeft <= 0;
             return (
-                <div className={`server-card bg-white rounded-[2.5rem] p-6 shadow-sm border-2 animate-fade relative overflow-hidden ${isExpired ? 'expired-status' : 'border-white'}`}>
+                <div className={`server-card bg-white rounded-[2.5rem] p-6 shadow-sm border-2 animate-fade relative overflow-hidden ${isExpired ? 'expired-status pulse-red' : 'border-white'}`}>
                     <div className="flex justify-between items-start mb-5">
                         <div className="flex items-center gap-3">
-                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}>
-                                <HardDrive size={22} />
-                            </div>
+                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}><HardDrive size={22} /></div>
                             <div>
                                 <h3 className="font-bold text-gray-800 text-lg leading-tight">{server.name}</h3>
-                                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-400">{server.type}</span>
+                                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-400 uppercase">{server.type}</span>
                             </div>
                         </div>
-                        <button onClick={onDelete} className="text-gray-200 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
-                    </div>
-
-                    <div className="bg-gray-50/50 p-3 rounded-xl border border-dashed border-gray-200 mb-4">
-                        <p className="text-[10px] text-gray-400 font-bold mb-1">المعرف / الرابط:</p>
-                        <p className="text-xs font-bold text-slate-700 truncate" dir="ltr">{server.identifier}</p>
-                    </div>
-
-                    <div className="flex justify-between items-center mb-6 px-1">
-                        <div className="flex items-center gap-2 text-gray-400 text-sm font-bold">
-                            <Clock size={16} /> 
-                            <span>{isExpired ? 'منتهي الصلاحية' : `باقي ${daysLeft} يوم`}</span>
+                        <div className="flex gap-1">
+                            <button onClick={onEdit} className="text-gray-300 hover:text-blue-500 transition-colors p-1"><Edit size={18}/></button>
+                            <button onClick={onDelete} className="text-gray-300 hover:text-red-500 transition-colors p-1"><Trash2 size={18}/></button>
                         </div>
-                        <span className="text-[10px] text-gray-300 font-bold">{new Date(server.endDate).toLocaleDateString('ar-EG')}</span>
                     </div>
-
-                    <button 
-                        onClick={onToggle}
-                        className={`w-full py-3 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-                            server.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600 border-2 border-orange-100'
-                        }`}
-                    >
-                        {server.isPaid ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>}
-                        {server.isPaid ? 'خالص ومدفوع' : 'غير خالص - ذمم'}
-                    </button>
-                    
-                    {isExpired && <div className="absolute top-0 left-0 bg-red-600 text-white text-[8px] font-bold px-4 py-1 rounded-br-2xl shadow-md uppercase">⚠️ انتهى</div>}
+                    <div className="bg-gray-50/50 p-3 rounded-xl border border-dashed border-gray-200 mb-4 text-xs font-bold text-slate-700 truncate" dir="ltr">{server.identifier}</div>
+                    <div className="flex justify-between items-center mb-6 text-[10px] font-bold text-gray-400 uppercase">
+                        <span>{isExpired ? '⚠️ منتهي' : `باقي ${daysLeft} يوم`}</span>
+                        <span>ينتهي: {new Date(server.endDate).toLocaleDateString('ar-EG')}</span>
+                    </div>
+                    <div className={`w-full py-3 rounded-2xl font-black text-xs text-center ${server.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
+                        {server.isPaid ? 'خالص ومدفوع ✅' : 'غير خالص ❌'}
+                    </div>
                 </div>
             );
         };
