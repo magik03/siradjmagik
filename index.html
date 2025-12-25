@@ -1,16 +1,30 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard | مدير الاشتراكات الذكي</title>
+    <title>مدير السيرفرات الاحترافي | Dashboard</title>
     
     <!-- Tailwind CSS & Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Babel for React in HTML -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Import Map for React & Icons -->
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
+        .server-card { transition: all 0.3s ease; }
+        .server-card:hover { transform: translateY(-5px); }
+        .expired-bg { background-color: #fef2f2 !important; border-color: #fecaca !important; }
+        .arabic-font { font-family: 'Cairo', sans-serif; }
+        
+        /* مظهر مخصص لنموذج الإدخال */
+        input:focus, select:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+    </style>
+
+    <!-- Import Map for Firebase & Icons -->
     <script type="importmap">
     {
       "imports": {
@@ -20,28 +34,6 @@
       }
     }
     </script>
-
-    <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
-        
-        /* تأثير النبض للسيرفرات المنتهية */
-        .pulse-red {
-            animation: pulse-red-animation 2s infinite;
-        }
-        @keyframes pulse-red-animation {
-            0% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0); }
-        }
-
-        /* تنسيق الإشعارات Toast */
-        .toast-enter { transform: translateY(100%); opacity: 0; }
-        .toast-active { transform: translateY(0); opacity: 1; transition: all 0.3s ease; }
-
-        /* تخصيص السكرول بار */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    </style>
 </head>
 <body>
     <div id="root"></div>
@@ -54,17 +46,17 @@
         import { 
             Trash2, Calendar, Server, Plus, RefreshCw, 
             Search, X, CheckCircle2, AlertTriangle, Clock, 
-            DollarSign, LayoutDashboard, Filter, ExternalLink, Bell
+            Database, LayoutDashboard, ExternalLink, HardDrive
         } from 'lucide-react';
 
         // ==========================================
-        // 1. إعدادات Firebase الخاصة بك
+        // 1. ضع إعدادات Firebase الخاصة بك هنا
         // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyBcBeibsLsTfnTwW9q1i_oq0eN5MU5xBck",
             authDomain: "siradjmagik.firebaseapp.com",
             projectId: "siradjmagik",
-            databaseURL: "https://siradjmagik-default-rtdb.firebaseio.com", // تأكد من وضع رابط الـ Database هنا
+            databaseURL: "https://siradjmagik-default-rtdb.firebaseio.com",
             storageBucket: "siradjmagik.firebasestorage.app",
             messagingSenderId: "826120620228",
             appId: "1:826120620228:web:0214400eb6141c0ff2e191"
@@ -78,10 +70,8 @@
             const [loading, setLoading] = useState(true);
             const [isFormOpen, setIsFormOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
-            const [activeFilter, setActiveFilter] = useState('all');
-            const [toast, setToast] = useState({ show: false, msg: '', type: '' });
 
-            // --- جلب البيانات الحية ---
+            // --- جلب البيانات ---
             useEffect(() => {
                 const serversRef = ref(db, 'servers');
                 onValue(serversRef, (snapshot) => {
@@ -94,13 +84,7 @@
                 });
             }, []);
 
-            // --- إشعارات Toast ---
-            const showToast = (msg, type = 'success') => {
-                setToast({ show: true, msg, type });
-                setTimeout(() => setToast({ show: false, msg: '', type: '' }), 3000);
-            };
-
-            // --- إضافة سيرفر جديد ---
+            // --- منطق الإضافة ---
             const handleAdd = (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
@@ -108,278 +92,223 @@
                 const arabicRegex = /^[\u0600-\u06FF\s]+$/;
 
                 if (!arabicRegex.test(name)) {
-                    showToast('يرجى كتابة الاسم باللغة العربية فقط', 'error');
+                    alert("يرجى إدخال الاسم باللغة العربية فقط");
                     return;
                 }
 
                 const duration = parseInt(fd.get('dur'));
-                const start = new Date();
-                const end = new Date();
-                end.setMonth(start.getMonth() + duration);
+                const startDate = new Date();
+                const endDate = new Date();
+                endDate.setMonth(startDate.getMonth() + duration);
 
                 const newServer = {
                     name,
                     type: fd.get('type'),
-                    url: fd.get('url'),
+                    identifier: fd.get('identifier'),
                     isPaid: fd.get('isPaid') === 'true',
-                    startDate: start.toISOString(),
-                    endDate: end.toISOString(),
-                    createdAt: Date.now()
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
                 };
 
-                push(ref(db, 'servers'), newServer)
-                    .then(() => {
-                        showToast('تمت إضافة السيرفر بنجاح');
-                        setIsFormOpen(false);
-                    });
-            };
-
-            // --- تغيير حالة الدفع ---
-            const togglePaid = (id, currentStatus) => {
-                update(ref(db, `servers/${id}`), { isPaid: !currentStatus });
-                showToast('تم تحديث حالة الدفع');
+                push(ref(db, 'servers'), newServer);
+                setIsFormOpen(false);
             };
 
             // --- الحذف ---
             const handleDelete = (id) => {
-                if(confirm('هل أنت متأكد من الحذف النهائي؟')) {
+                if(confirm('هل تريد حذف هذا السيرفر؟')) {
                     remove(ref(db, `servers/${id}`));
-                    showToast('تم حذف السيرفر', 'error');
                 }
             };
 
-            // --- حساب الأيام المتبقية ---
-            const getRemainingDays = (endDate) => {
-                const diff = new Date(endDate) - new Date();
+            // --- تغيير حالة الدفع ---
+            const toggleStatus = (id, current) => {
+                update(ref(db, `servers/${id}`), { isPaid: !current });
+            };
+
+            // --- الحسابات ---
+            const getDaysLeft = (date) => {
+                const diff = new Date(date) - new Date();
                 return Math.ceil(diff / (1000 * 60 * 60 * 24));
             };
 
-            // --- الإحصائيات ---
-            const stats = useMemo(() => {
-                const now = new Date();
-                return {
-                    total: servers.length,
-                    expired: servers.filter(s => now > new Date(s.endDate)).length,
-                    unpaid: servers.filter(s => !s.isPaid).length,
-                    active: servers.filter(s => s.isPaid && now <= new Date(s.endDate)).length
-                };
-            }, [servers]);
-
-            // --- الفلترة ---
-            const filtered = servers.filter(s => {
-                const matchName = s.name.includes(searchTerm);
-                const isExpired = new Date() > new Date(s.endDate);
-                if (activeFilter === 'expired') return matchName && isExpired;
-                if (activeFilter === 'unpaid') return matchName && !s.isPaid;
-                return matchName;
-            });
+            const filteredServers = servers.filter(s => 
+                s.name.includes(searchTerm) || s.type.includes(searchTerm) || s.identifier.includes(searchTerm)
+            );
 
             return (
                 <div className="min-h-screen">
                     {/* Header */}
-                    <header className="bg-white border-b sticky top-0 z-40 px-4 py-3 md:py-4 shadow-sm">
+                    <header className="bg-white border-b sticky top-0 z-40 p-4 shadow-sm">
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-3">
-                                <div className="bg-blue-600 p-2.5 rounded-2xl text-white shadow-lg shadow-blue-200">
+                                <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
                                     <LayoutDashboard size={24} />
                                 </div>
-                                <div>
-                                    <h1 className="font-black text-xl text-slate-800 leading-tight">لوحة التحكم</h1>
-                                    <p className="text-xs text-slate-400 font-bold uppercase">Cloud Subscriptions</p>
-                                </div>
+                                <h1 className="font-black text-xl text-gray-800">مدير السيرفرات السحابي</h1>
                             </div>
 
                             <div className="flex items-center gap-2 w-full md:w-auto">
-                                <div className="relative flex-1 md:w-64">
+                                <div className="relative flex-1 md:w-80">
                                     <input 
                                         type="text" 
-                                        placeholder="بحث عن سيرفر..." 
-                                        className="w-full bg-slate-100 border-none py-2.5 pr-10 pl-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                                        placeholder="بحث بالاسم، النوع، أو المعرف..." 
+                                        className="w-full bg-gray-100 border-none py-2.5 pr-10 pl-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
-                                    <Search className="absolute right-3 top-2.5 text-slate-400" size={18} />
+                                    <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
                                 </div>
-                                <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 md:px-6 md:py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-200 transition-all active:scale-95">
-                                    <Plus size={20} /> <span className="hidden md:inline">إضافة جديد</span>
+                                <button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-100">
+                                    <Plus size={20} /> إضافة
                                 </button>
                             </div>
                         </div>
                     </header>
 
+                    {/* Main Content */}
                     <main className="max-w-7xl mx-auto p-4 md:p-8">
-                        {/* Stats Widgets */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-                            <StatCard label="إجمالي السيرفرات" val={stats.total} icon={<Server />} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
-                            <StatCard label="اشتراكات منتهية" val={stats.expired} icon={<Clock />} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
-                            <StatCard label="مبالغ لم تُدفع" val={stats.unpaid} icon={<DollarSign />} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
-                            <StatCard label="سيرفرات نشطة" val={stats.active} icon={<CheckCircle2 />} color="green" />
-                        </div>
-
-                        {/* Servers Grid */}
                         {loading ? (
                             <div className="flex justify-center py-20"><RefreshCw className="animate-spin text-blue-600" size={40} /></div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {filtered.map(server => (
+                                {filteredServers.map(server => (
                                     <ServerCard 
                                         key={server.id} 
                                         server={server} 
+                                        daysLeft={getDaysLeft(server.endDate)}
                                         onDelete={() => handleDelete(server.id)}
-                                        onTogglePaid={() => togglePaid(server.id, server.isPaid)}
-                                        daysLeft={getRemainingDays(server.endDate)}
+                                        onToggle={() => toggleStatus(server.id, server.isPaid)}
                                     />
                                 ))}
-                                {filtered.length === 0 && (
-                                    <div className="col-span-full text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-slate-200">
-                                        <p className="text-slate-400 font-bold">لا يوجد نتائج تطابق بحثك..</p>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </main>
 
-                    {/* Modal: Add Server */}
+                    {/* Modal Form */}
                     {isFormOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
                             <form onSubmit={handleAdd} className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-in overflow-hidden">
-                                <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
-                                    <h2 className="text-xl font-black flex items-center gap-2"><Plus className="text-blue-400" /> إضافة سيرفر جديد</h2>
-                                    <button type="button" onClick={() => setIsFormOpen(false)} className="hover:bg-slate-800 p-2 rounded-full transition-colors"><X size={20}/></button>
+                                <div className="bg-blue-600 p-6 text-white flex justify-between items-center">
+                                    <h2 className="text-xl font-black">إضافة اشتراك جديد</h2>
+                                    <button type="button" onClick={() => setIsFormOpen(false)}><X/></button>
                                 </div>
                                 <div className="p-8 space-y-5">
+                                    {/* Name Input */}
                                     <div>
-                                        <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-1">اسم السيرفر (عربي فقط)</label>
-                                        <input name="name" required placeholder="مثال: سيرفر العائلة" className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none focus:border-blue-500 focus:bg-white transition-all"/>
+                                        <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">اسم السيرفر (بالعربية فقط)</label>
+                                        <input name="name" required placeholder="مثال: اشتراك العائلة" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none transition-all"/>
                                     </div>
+
+                                    {/* Type Input (Hybrid) */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">نوع السيرفر (اختر أو اكتب)</label>
+                                        <input 
+                                            name="type" 
+                                            list="serverTypes" 
+                                            required 
+                                            placeholder="فاميلي، نيو، أو نوع آخر..." 
+                                            className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none transition-all"
+                                        />
+                                        <datalist id="serverTypes">
+                                            <option value="فاميلي" />
+                                            <option value="نيو" />
+                                        </datalist>
+                                    </div>
+
+                                    {/* Identifier Input */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">رابط السيرفر أو المعرف (ID)</label>
+                                        <input name="identifier" required placeholder="أدخل الرابط أو كود السيرفر" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none transition-all text-left" dir="ltr"/>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-1">نوع السيرفر</label>
-                                            <select name="type" className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none appearance-none">
-                                                <option value="فاميلي">فاميلي</option>
-                                                <option value="نيو">نيو</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-1">مدة الاشتراك</label>
-                                            <select name="dur" className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none appearance-none">
+                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">مدة الاشتراك</label>
+                                            <select name="dur" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none">
                                                 <option value="1">شهر واحد</option>
                                                 <option value="3">3 أشهر</option>
                                                 <option value="6">6 أشهر</option>
                                                 <option value="12">سنة كاملة</option>
                                             </select>
                                         </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">حالة الدفع</label>
+                                            <select name="isPaid" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold text-blue-600">
+                                                <option value="true">خالص ✅</option>
+                                                <option value="false">غير خالص ❌</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-1">رابط السيرفر</label>
-                                        <input name="url" required type="url" placeholder="https://..." className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none focus:border-blue-500 text-left" dir="ltr"/>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-1">حالة الدفع المبدئية</label>
-                                        <select name="isPaid" className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none appearance-none font-bold text-blue-600">
-                                            <option value="true">خالص ومدفوع ✅</option>
-                                            <option value="false">غير خالص - ذمم ❌</option>
-                                        </select>
-                                    </div>
-                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-200 transition-all active:scale-95">حفظ في السحابة</button>
+
+                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-100 transition-all active:scale-95">حفظ السيرفر سحابياً</button>
                                 </div>
                             </form>
                         </div>
                     )}
-
-                    {/* Toast Notification */}
-                    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-8 py-3 rounded-2xl shadow-2xl font-bold flex items-center gap-3 ${toast.show ? 'toast-active' : 'toast-enter pointer-events-none opacity-0'} ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'}`}>
-                        {toast.type === 'error' ? <AlertTriangle size={20}/> : <Bell size={20}/>}
-                        {toast.msg}
-                    </div>
                 </div>
             );
         };
 
-        const StatCard = ({ label, val, icon, color, active, onClick }) => {
-            const styles = {
-                blue: 'bg-blue-50 border-blue-100 text-blue-600',
-                red: 'bg-red-50 border-red-100 text-red-600',
-                orange: 'bg-orange-50 border-orange-100 text-orange-600',
-                green: 'bg-green-50 border-green-100 text-green-600'
-            };
-            return (
-                <div 
-                    onClick={onClick}
-                    className={`p-5 rounded-[2rem] border-2 cursor-pointer transition-all duration-300 ${active ? styles[color] + ' scale-105 shadow-xl ring-4 ring-white' : 'bg-white border-white shadow-sm hover:border-slate-200 text-slate-500'}`}
-                >
-                    <div className="flex justify-between items-start mb-2">
-                        <div className={`p-2 rounded-xl ${active ? 'bg-white/50' : 'bg-slate-50'}`}>{icon}</div>
-                        <span className="text-2xl font-black leading-none">{val}</span>
-                    </div>
-                    <p className="text-xs font-black opacity-70 uppercase tracking-tighter">{label}</p>
-                </div>
-            );
-        };
-
-        const ServerCard = ({ server, onDelete, onTogglePaid, daysLeft }) => {
+        const ServerCard = ({ server, daysLeft, onDelete, onToggle }) => {
             const isExpired = daysLeft <= 0;
-            const isWarning = daysLeft > 0 && daysLeft <= 7;
-
+            
             return (
-                <div className={`bg-white rounded-[2.5rem] p-6 shadow-sm border-2 transition-all duration-300 hover:shadow-xl relative overflow-hidden group ${isExpired ? 'border-red-500 pulse-red bg-red-50/20' : 'border-white hover:border-blue-100'}`}>
-                    
-                    {/* Header: Name & Type */}
-                    <div className="flex justify-between items-start mb-6">
-                        <div className="flex items-center gap-4">
-                            <div className={`p-4 rounded-[1.5rem] transition-colors ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                                <Server size={24} />
+                <div className={`server-card bg-white rounded-[2rem] p-6 shadow-sm border-2 relative overflow-hidden ${isExpired ? 'expired-bg border-red-200' : 'border-white'}`}>
+                    {/* Status Badge */}
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-50 text-blue-600'}`}>
+                                <HardDrive size={24} />
                             </div>
                             <div>
-                                <h3 className="font-black text-slate-800 text-lg leading-tight">{server.name}</h3>
-                                <div className="flex gap-2 mt-1">
-                                    <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full font-black text-slate-400 uppercase">{server.type}</span>
-                                    {isWarning && !isExpired && <span className="text-[10px] bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full font-black flex items-center gap-1"><Clock size={10}/> قريباً</span>}
-                                </div>
+                                <h3 className="font-black text-gray-800 text-lg leading-tight">{server.name}</h3>
+                                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-black text-gray-400 uppercase tracking-tighter">{server.type}</span>
                             </div>
                         </div>
-                        <button onClick={onDelete} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
+                        <button onClick={onDelete} className="text-gray-200 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
                     </div>
 
-                    {/* Body: Stats & Dates */}
-                    <div className="space-y-4 mb-8">
-                        <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                                <Clock size={16} className={isExpired ? 'text-red-500' : 'text-slate-400'} />
-                                <span className="text-sm font-bold text-slate-500">الحالة الزمنية:</span>
+                    {/* Identifier */}
+                    <div className="mb-4 bg-gray-50/50 p-3 rounded-xl border border-dashed border-gray-200">
+                        <p className="text-[10px] text-gray-400 font-bold mb-1 uppercase">معرف السيرفر / الرابط</p>
+                        <p className="text-xs font-bold text-slate-700 truncate" dir="ltr">{server.identifier}</p>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="space-y-3 mb-6">
+                        <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-2 text-gray-400 font-medium">
+                                <Clock size={16} />
+                                <span>الحالة:</span>
                             </div>
-                            <span className={`text-sm font-black ${isExpired ? 'text-red-600' : 'text-slate-800'}`}>
-                                {isExpired ? 'منتهي الصلاحية' : `باقي ${daysLeft} يوم`}
-                            </span>
+                            {isExpired ? (
+                                <span className="text-red-600 font-black flex items-center gap-1">
+                                    <AlertTriangle size={14}/> انتهى الاشتراك
+                                </span>
+                            ) : (
+                                <span className="text-blue-600 font-black">باقي {daysLeft} يوم</span>
+                            )}
                         </div>
 
-                        <div className="flex justify-between px-2 text-xs">
-                            <div className="text-slate-400 font-bold">بدأ في: {new Date(server.startDate).toLocaleDateString('ar-EG')}</div>
-                            <div className="text-slate-400 font-bold text-left">ينتهي: {new Date(server.endDate).toLocaleDateString('ar-EG')}</div>
+                        <div className="flex justify-between items-center text-xs text-gray-400 font-bold">
+                            <span>ينتهي في:</span>
+                            <span className={isExpired ? 'text-red-400' : ''}>{new Date(server.endDate).toLocaleDateString('ar-EG')}</span>
                         </div>
                     </div>
 
-                    {/* Actions & Payment */}
-                    <div className="flex items-center gap-3">
-                        <button 
-                            onClick={onTogglePaid}
-                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-xs transition-all ${server.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600 border-2 border-orange-100'}`}
-                        >
-                            {server.isPaid ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>}
-                            {server.isPaid ? 'خالص ومدفوع' : 'غير خالص ❌'}
-                        </button>
-                        
-                        <a href={server.url} target="_blank" className="p-3 bg-slate-100 text-slate-400 rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-inner">
-                            <ExternalLink size={20}/>
-                        </a>
-                    </div>
-
-                    {/* Expired Overlay text */}
-                    {isExpired && (
-                        <div className="absolute top-4 -left-12 -rotate-45 bg-red-600 text-white px-12 py-1 text-[10px] font-black uppercase shadow-lg">
-                            Expired
-                        </div>
-                    )}
+                    {/* Action Button */}
+                    <button 
+                        onClick={onToggle}
+                        className={`w-full py-3 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+                            server.isPaid 
+                                ? 'bg-green-50 text-green-600 hover:bg-green-100' 
+                                : 'bg-orange-50 text-orange-600 border-2 border-orange-100 hover:bg-orange-100'
+                        }`}
+                    >
+                        {server.isPaid ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>}
+                        {server.isPaid ? 'خالص ومدفوع' : 'غير خالص - ذمم'}
+                    </button>
                 </div>
             );
         };
