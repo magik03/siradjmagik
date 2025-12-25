@@ -1,16 +1,17 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات المتطور | تحرير التواريخ</title>
+    <title>مدير السيرفرات | المحاسب الذكي</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
+        body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
         .server-card { transition: all 0.3s ease; }
         .server-card:hover { transform: translateY(-5px); }
         .expired-status { background-color: #fef2f2; border-color: #fecaca; }
@@ -45,7 +46,7 @@
         import { 
             Trash2, Edit, Calendar, Server, Plus, RefreshCw, 
             Search, X, CheckCircle2, AlertTriangle, Clock, 
-            LayoutDashboard, HardDrive, Filter, DollarSign
+            LayoutDashboard, HardDrive, DollarSign, Wallet
         } from 'lucide-react';
 
         // --- إعدادات Firebase ---
@@ -62,6 +63,19 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
+        const PRICING_DATA = {
+            "فاميلي": [
+                { months: 6, price: "150000", label: "6 أشهر - 150,000" },
+                { months: 12, price: "250000", label: "سنة كاملة - 250,000" }
+            ],
+            "نيو": [
+                { months: 1, price: "70000", label: "شهر واحد - 70,000" },
+                { months: 3, price: "150000", label: "3 أشهر - 150,000" },
+                { months: 6, price: "250000", label: "6 أشهر - 250,000" },
+                { months: 12, price: "350000", label: "سنة كاملة - 350,000" }
+            ]
+        };
+
         const App = () => {
             const [servers, setServers] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -69,6 +83,7 @@
             const [editingServer, setEditingServer] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const [activeFilter, setActiveFilter] = useState('all');
+            const [formType, setFormType] = useState("فاميلي");
 
             useEffect(() => {
                 const serversRef = ref(db, 'servers');
@@ -85,22 +100,24 @@
             const handleSave = (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
-                const duration = parseInt(fd.get('dur'));
-                
-                // استخدام التاريخ المدخل يدوياً من النموذج
+                const durationMonths = parseInt(fd.get('dur'));
+                const type = fd.get('type');
+                const selectedPlan = PRICING_DATA[type].find(p => p.months === durationMonths);
                 const manualStartDate = fd.get('startDate'); 
+                
                 let start = new Date(manualStartDate);
                 let end = new Date(start);
-                end.setMonth(start.getMonth() + duration);
+                end.setMonth(start.getMonth() + durationMonths);
 
                 const serverData = {
                     name: fd.get('name'),
-                    type: fd.get('type'),
+                    type: type,
                     identifier: fd.get('identifier'),
                     isPaid: fd.get('isPaid') === 'true',
                     startDate: start.toISOString(),
                     endDate: end.toISOString(),
-                    duration: duration
+                    duration: durationMonths,
+                    price: selectedPlan ? selectedPlan.price : "0"
                 };
 
                 if (editingServer) {
@@ -108,37 +125,27 @@
                 } else {
                     push(ref(db, 'servers'), serverData);
                 }
-
                 setIsFormOpen(false);
                 setEditingServer(null);
             };
 
-            const handleDelete = (id) => {
-                if(confirm('هل تريد الحذف؟')) remove(ref(db, `servers/${id}`));
-            };
-
-            const openEdit = (server) => {
-                setEditingServer(server);
-                setIsFormOpen(true);
-            };
-
-            const getDaysLeft = (date) => {
-                const diff = new Date(date) - new Date();
-                return Math.ceil(diff / (1000 * 60 * 60 * 24));
-            };
-
-            // تحويل تاريخ ISO إلى صيغة YYYY-MM-DD لتظهر في مدخل التاريخ
-            const formatDateForInput = (isoString) => {
-                if (!isoString) return new Date().toISOString().split('T')[0];
-                return new Date(isoString).toISOString().split('T')[0];
+            // دالة تنسيق التاريخ بالأرقام الفرنسية (123)
+            const formatDT = (dateIso) => {
+                return new Date(dateIso).toLocaleDateString('fr-FR', {
+                    year: 'numeric', month: '2-digit', day: '2-digit'
+                });
             };
 
             const stats = useMemo(() => {
                 const now = new Date();
+                const unpaidServers = servers.filter(s => !s.isPaid);
+                const debtSum = unpaidServers.reduce((acc, s) => acc + parseInt(s.price || 0), 0);
+                
                 return {
                     total: servers.length,
                     expired: servers.filter(s => now > new Date(s.endDate)).length,
-                    unpaid: servers.filter(s => !s.isPaid).length,
+                    unpaidCount: unpaidServers.length,
+                    totalDebt: debtSum.toLocaleString('fr-FR'), // تنسيق المجموع بالأرقام الفرنسية
                     active: servers.filter(s => s.isPaid && now <= new Date(s.endDate)).length
                 };
             }, [servers]);
@@ -162,14 +169,11 @@
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-3">
                                 <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24} /></div>
-                                <h1 className="font-black text-xl text-gray-800 tracking-tight">لوحة تحكم السيرفرات</h1>
+                                <h1 className="font-black text-xl text-gray-800">لوحة المحاسب الذكي</h1>
                             </div>
                             <div className="flex items-center gap-2 w-full md:w-auto">
-                                <div className="relative flex-1 md:w-80">
-                                    <input type="text" placeholder="بحث..." className="w-full bg-gray-100 border-none py-2.5 pr-10 pl-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                                    <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
-                                </div>
-                                <button onClick={() => { setEditingServer(null); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
+                                <input type="text" placeholder="بحث..." className="w-full bg-gray-100 border-none py-2.5 pr-4 pl-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                                <button onClick={() => { setEditingServer(null); setFormType("فاميلي"); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
                                     <Plus size={20} /> إضافة
                                 </button>
                             </div>
@@ -177,10 +181,18 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-4 md:p-8">
+                        {/* الإحصائيات التفاعلية */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
                             <StatBox label="الكل" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
                             <StatBox label="منتهي" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
-                            <StatBox label="غير خالص" val={stats.unpaid} color="orange" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
+                            <StatBox 
+                                label="إجمالي الديون" 
+                                val={`${stats.totalDebt} دج`} 
+                                subLabel={`${stats.unpaidCount} سيرفرات`}
+                                color="orange" 
+                                active={activeFilter === 'unpaid'} 
+                                onClick={() => setActiveFilter('unpaid')} 
+                            />
                             <StatBox label="نشط" val={stats.active} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
                         </div>
 
@@ -189,51 +201,47 @@
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {filteredServers.map(s => (
-                                    <ServerCard key={s.id} server={s} daysLeft={getDaysLeft(s.endDate)} onDelete={() => handleDelete(s.id)} onEdit={() => openEdit(s)} />
+                                    <ServerCard 
+                                        key={s.id} 
+                                        server={s} 
+                                        daysLeft={Math.ceil((new Date(s.endDate) - new Date()) / (1000 * 60 * 60 * 24))} 
+                                        onDelete={() => {if(confirm('حذف؟')) remove(ref(db, `servers/${s.id}`))}} 
+                                        onEdit={() => {setEditingServer(s); setFormType(s.type); setIsFormOpen(true);}} 
+                                        formatDate={formatDT}
+                                    />
                                 ))}
                             </div>
                         )}
                     </main>
 
+                    {/* نافذة الإضافة والتعديل */}
                     {isFormOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
                             <form onSubmit={handleSave} className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-fade overflow-hidden border-t-8 border-blue-600">
-                                <div className="p-6 flex justify-between items-center border-b">
-                                    <h2 className="text-xl font-black">{editingServer ? 'تعديل السيرفر' : 'إضافة سيرفر جديد'}</h2>
+                                <div className="p-6 flex justify-between items-center border-b font-bold text-gray-700">
+                                    <span>{editingServer ? 'تعديل البيانات' : 'سيرفر جديد'}</span>
                                     <button type="button" onClick={() => setIsFormOpen(false)}><X/></button>
                                 </div>
                                 <div className="p-8 space-y-4">
-                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">اسم السيرفر</label>
-                                    <input name="name" defaultValue={editingServer?.name} required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
-                                    
-                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">النوع</label>
-                                    <input name="type" defaultValue={editingServer?.type} list="types" required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
-                                    <datalist id="types"><option value="فاميلي" /><option value="نيو" /></datalist>
-
-                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">المعرف / الرابط</label>
-                                    <input name="identifier" defaultValue={editingServer?.identifier} required className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 text-left" dir="ltr"/>
-
+                                    <input name="name" defaultValue={editingServer?.name} required placeholder="اسم السيرفر" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500"/>
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">تاريخ البداية</label>
-                                            <input type="date" name="startDate" defaultValue={formatDateForInput(editingServer?.startDate)} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold" required />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-400 mb-2 mr-1 uppercase">المدة</label>
-                                            <select name="dur" defaultValue={editingServer?.duration || "1"} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold">
-                                                <option value="1">شهر</option><option value="3">3 أشهر</option><option value="6">6 أشهر</option><option value="12">سنة</option>
-                                            </select>
-                                        </div>
+                                        <select name="type" value={formType} onChange={(e) => setFormType(e.target.value)} className="bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold">
+                                            <option value="فاميلي">فاميلي</option><option value="نيو">نيو</option>
+                                        </select>
+                                        <select name="dur" defaultValue={editingServer?.duration} className="bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold">
+                                            {PRICING_DATA[formType].map((plan, idx) => (
+                                                <option key={idx} value={plan.months}>{plan.label}</option>
+                                            ))}
+                                        </select>
                                     </div>
-
-                                    <label className="block text-xs font-bold text-gray-400 mb-1 mr-1">حالة الدفع</label>
-                                    <select name="isPaid" defaultValue={editingServer ? String(editingServer.isPaid) : "true"} className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none appearance-none font-bold text-blue-600">
-                                        <option value="true">خالص ✅</option><option value="false">غير خالص ❌</option>
-                                    </select>
-
-                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-700 transition-all active:scale-95">
-                                        {editingServer ? 'تحديث' : 'حفظ'}
-                                    </button>
+                                    <input name="identifier" defaultValue={editingServer?.identifier} required placeholder="المعرف / الكود" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none text-left" dir="ltr"/>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <input type="date" name="startDate" defaultValue={editingServer ? new Date(editingServer.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]} className="bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold" required />
+                                        <select name="isPaid" defaultValue={editingServer ? String(editingServer.isPaid) : "true"} className="bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold text-green-600">
+                                            <option value="true">خالص ✅</option><option value="false">غير خالص ❌</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl active:scale-95">حفظ السيرفر</button>
                                 </div>
                             </form>
                         </div>
@@ -242,39 +250,47 @@
             );
         };
 
-        const StatBox = ({ label, val, color, active, onClick }) => {
-            const colors = { blue: 'border-blue-200 bg-blue-50 text-blue-700', red: 'border-red-200 bg-red-50 text-red-700', orange: 'border-orange-200 bg-orange-50 text-orange-700', green: 'border-green-200 bg-green-50 text-green-700' };
+        const StatBox = ({ label, val, subLabel, color, active, onClick }) => {
+            const colors = { blue: 'bg-blue-50 text-blue-700 border-blue-200', red: 'bg-red-50 text-red-700 border-red-200', orange: 'bg-orange-50 text-orange-700 border-orange-200', green: 'bg-green-50 text-green-700 border-green-200' };
             return (
-                <button onClick={onClick} className={`p-5 rounded-[2rem] border-2 transition-all duration-300 text-right ${active ? colors[color] + ' shadow-xl scale-105 ring-4 ring-white' : 'bg-white border-transparent text-gray-500 shadow-sm hover:border-gray-200'}`}>
+                <button onClick={onClick} className={`p-5 rounded-[2rem] border-2 transition-all text-right shadow-sm ${active ? colors[color] + ' scale-105 ring-4 ring-white shadow-xl' : 'bg-white border-transparent text-gray-500 hover:border-gray-200'}`}>
                     <p className="text-[10px] font-bold uppercase mb-1 opacity-70">{label}</p>
-                    <p className="text-3xl font-black leading-none">{val}</p>
+                    <p className="text-xl md:text-2xl font-black leading-none" dir="ltr">{val}</p>
+                    {subLabel && <p className="text-[9px] mt-2 font-bold opacity-60">{subLabel}</p>}
                 </button>
             );
         };
 
-        const ServerCard = ({ server, daysLeft, onDelete, onEdit }) => {
+        const ServerCard = ({ server, daysLeft, onDelete, onEdit, formatDate }) => {
             const isExpired = daysLeft <= 0;
+            const priceFormatted = parseInt(server.price || 0).toLocaleString('fr-FR');
             return (
                 <div className={`server-card bg-white rounded-[2.5rem] p-6 shadow-sm border-2 animate-fade relative overflow-hidden ${isExpired ? 'expired-status pulse-red' : 'border-white'}`}>
                     <div className="flex justify-between items-start mb-5">
                         <div className="flex items-center gap-3">
-                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}><HardDrive size={22} /></div>
+                            <div className={`p-3 rounded-2xl ${isExpired ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}><Server size={22} /></div>
                             <div>
-                                <h3 className="font-bold text-gray-800 text-lg leading-tight">{server.name}</h3>
-                                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-400 uppercase">{server.type}</span>
+                                <h3 className="font-bold text-gray-800 leading-tight">{server.name}</h3>
+                                <div className="flex gap-2 mt-1">
+                                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-400">{server.type}</span>
+                                    <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded-full font-bold text-blue-600" dir="ltr">{priceFormatted} دج</span>
+                                </div>
                             </div>
                         </div>
                         <div className="flex gap-1">
-                            <button onClick={onEdit} className="text-gray-300 hover:text-blue-500 transition-colors p-1"><Edit size={18}/></button>
-                            <button onClick={onDelete} className="text-gray-300 hover:text-red-500 transition-colors p-1"><Trash2 size={18}/></button>
+                            <button onClick={onEdit} className="text-gray-300 hover:text-blue-500 p-1"><Edit size={18}/></button>
+                            <button onClick={onDelete} className="text-gray-300 hover:text-red-500 p-1"><Trash2 size={18}/></button>
                         </div>
                     </div>
-                    <div className="bg-gray-50/50 p-3 rounded-xl border border-dashed border-gray-200 mb-4 text-xs font-bold text-slate-700 truncate" dir="ltr">{server.identifier}</div>
-                    <div className="flex justify-between items-center mb-6 text-[10px] font-bold text-gray-400 uppercase">
-                        <span>{isExpired ? '⚠️ منتهي' : `باقي ${daysLeft} يوم`}</span>
-                        <span>ينتهي: {new Date(server.endDate).toLocaleDateString('ar-EG')}</span>
+                    
+                    <div className="bg-gray-50/50 p-3 rounded-xl border border-dashed border-gray-200 mb-4 text-xs font-bold text-slate-700 truncate text-center" dir="ltr">{server.identifier}</div>
+                    
+                    <div className="flex justify-between items-center mb-6 text-[10px] font-bold text-gray-400 uppercase" dir="ltr">
+                        <span className={isExpired ? 'text-red-600' : ''}>{isExpired ? 'EXPIRED' : `LEFT: ${daysLeft} DAYS`}</span>
+                        <span>END: {formatDate(server.endDate)}</span>
                     </div>
-                    <div className={`w-full py-3 rounded-2xl font-black text-xs text-center ${server.isPaid ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
+
+                    <div className={`w-full py-3 rounded-2xl font-black text-xs text-center border ${server.isPaid ? 'bg-green-50 text-green-600 border-green-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
                         {server.isPaid ? 'خالص ومدفوع ✅' : 'غير خالص ❌'}
                     </div>
                 </div>
