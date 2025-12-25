@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير السيرفرات | النسخة الاحترافية الحمراء</title>
+    <title>مدير السيرفرات | حساب الأرباح والديون</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -14,21 +13,16 @@
         body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
         .server-card { transition: all 0.3s ease; }
         .server-card:hover { transform: translateY(-5px); }
-        
-        /* حالة الانتهاء */
         .expired-status { background-color: #fef2f2; border: 2px solid #ef4444 !important; }
+        .unpaid-card { border: 2px solid #ef4444 !important; background-color: #fff1f2; }
+        .animate-fade { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .pulse-red { animation: pulse-red-animation 2s infinite; }
         @keyframes pulse-red-animation {
             0% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
             70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0); }
         }
-
-        /* حالة غير مدفوع */
-        .unpaid-card { border: 2px solid #ef4444 !important; background-color: #fff1f2; }
-        
-        .animate-fade { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 
     <script type="importmap">
@@ -52,7 +46,7 @@
         import { 
             Trash2, Edit, Calendar, Server, Plus, RefreshCw, 
             Search, X, CheckCircle2, AlertTriangle, Clock, 
-            LayoutDashboard, HardDrive, DollarSign, Wallet
+            LayoutDashboard, HardDrive, DollarSign, TrendingUp
         } from 'lucide-react';
 
         const firebaseConfig = {
@@ -68,16 +62,18 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
+        // --- جدول الأسعار (بيع وشراء) ---
+        // ملاحظة: تم تحويل مبالغ البيع لتكون بنفس وحدة مبالغ الشراء (الصافي) لضمان صحة الحسابات
         const PRICING_DATA = {
             "فاميلي": [
-                { months: 6, price: "150000", label: "6 أشهر - 150,000" },
-                { months: 12, price: "250000", label: "سنة كاملة - 250,000" }
+                { months: 6, sell: 1500, buy: 650, label: "6 أشهر - 1,500 دج" },
+                { months: 12, sell: 2500, buy: 1310, label: "سنة كاملة - 2,500 دج" }
             ],
             "نيو": [
-                { months: 1, price: "70000", label: "شهر واحد - 70,000" },
-                { months: 3, price: "150000", label: "3 أشهر - 150,000" },
-                { months: 6, price: "250000", label: "6 أشهر - 250,000" },
-                { months: 12, price: "350000", label: "سنة كاملة - 350,000" }
+                { months: 1, sell: 700, buy: 375, label: "1 شهر - 700 دج" },
+                { months: 3, sell: 1500, buy: 735, label: "3 أشهر - 1,500 دج" },
+                { months: 6, sell: 2500, buy: 1400, label: "6 أشهر - 2,500 دج" },
+                { months: 12, sell: 3500, buy: 2500, label: "سنة كاملة - 3,500 دج" }
             ]
         };
 
@@ -120,14 +116,14 @@
                     startDate: start.toISOString(),
                     endDate: end.toISOString(),
                     duration: dur,
-                    price: plan ? plan.price : "0"
+                    sellPrice: plan ? plan.sell : 0,
+                    buyPrice: plan ? plan.buy : 0,
+                    profit: plan ? (plan.sell - plan.buy) : 0
                 };
 
                 editingServer ? update(ref(db, `servers/${editingServer.id}`), data) : push(ref(db, 'servers'), data);
                 setIsFormOpen(false); setEditingServer(null);
             };
-
-            const formatDT = (date) => new Date(date).toLocaleDateString('fr-FR');
 
             const stats = useMemo(() => {
                 const now = new Date();
@@ -135,9 +131,10 @@
                 return {
                     total: servers.length,
                     expired: servers.filter(s => now > new Date(s.endDate)).length,
-                    unpaidDebt: unpaidList.reduce((acc, s) => acc + parseInt(s.price || 0), 0).toLocaleString('fr-FR'),
+                    unpaidDebt: unpaidList.reduce((acc, s) => acc + (s.sellPrice || 0), 0).toLocaleString('fr-FR'),
                     unpaidCount: unpaidList.length,
-                    activeCount: servers.filter(s => now <= new Date(s.endDate)).length
+                    activeCount: servers.filter(s => now <= new Date(s.endDate)).length,
+                    totalProfit: servers.reduce((acc, s) => acc + (s.profit || 0), 0).toLocaleString('fr-FR')
                 };
             }, [servers]);
 
@@ -158,27 +155,28 @@
                     <header className="bg-white border-b sticky top-0 z-40 p-4 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24} /></div>
-                            <h1 className="font-black text-xl text-gray-800">إدارة الاشتراكات السحابية</h1>
+                            <h1 className="font-black text-xl text-gray-800">إدارة الأرباح والاشتراكات</h1>
                         </div>
                         <div className="flex items-center gap-2 w-full md:w-auto">
-                            <input type="text" placeholder="بحث باسم السيرفر..." className="w-full bg-gray-100 border-none py-2.5 px-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                            <button onClick={() => {setEditingServer(null); setIsFormOpen(true);}} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 active:scale-95 transition-all">
+                            <input type="text" placeholder="بحث..." className="w-full bg-gray-100 border-none py-2.5 px-4 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                            <button onClick={() => {setEditingServer(null); setIsFormOpen(true);}} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-md active:scale-95 transition-all">
                                 <Plus size={20} /> إضافة
                             </button>
                         </div>
                     </header>
 
                     <main className="max-w-7xl mx-auto p-4 md:p-8">
-                        {/* لوحة الإحصائيات */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-                            <StatBox label="إجمالي السيرفرات" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
-                            <StatBox label="سيرفرات منتهية" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
-                            <StatBox label="إجمالي الديون" val={`${stats.unpaidDebt} دج`} subLabel={`${stats.unpaidCount} غير خالص`} color="red_dark" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
-                            <StatBox label="سيرفرات نشطة" val={stats.activeCount} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
+                        {/* لوحة الإحصائيات المطورة */}
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-10">
+                            <StatBox label="الكل" val={stats.total} color="blue" active={activeFilter === 'all'} onClick={() => setActiveFilter('all')} />
+                            <StatBox label="منتهية" val={stats.expired} color="red" active={activeFilter === 'expired'} onClick={() => setActiveFilter('expired')} />
+                            <StatBox label="الديون" val={`${stats.unpaidDebt} دج`} color="red_dark" active={activeFilter === 'unpaid'} onClick={() => setActiveFilter('unpaid')} />
+                            <StatBox label="الأرباح الصافية" val={`${stats.totalProfit} دج`} color="green_dark" />
+                            <StatBox label="نشطة" val={stats.activeCount} color="green" active={activeFilter === 'active'} onClick={() => setActiveFilter('active')} />
                         </div>
 
                         {loading ? (
-                            <div className="flex justify-center py-20"><RefreshCw className="animate-spin text-blue-600" size={40} /></div>
+                            <div className="text-center py-20"><RefreshCw className="animate-spin text-blue-600" size={40} /></div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {filtered.map(s => (
@@ -186,25 +184,23 @@
                                         key={s.id} 
                                         server={s} 
                                         daysLeft={Math.ceil((new Date(s.endDate) - new Date()) / (1000 * 60 * 60 * 24))} 
-                                        onDelete={() => {if(confirm('هل أنت متأكد من الحذف؟')) remove(ref(db, `servers/${s.id}`))}} 
+                                        onDelete={() => {if(confirm('حذف؟')) remove(ref(db, `servers/${s.id}`))}} 
                                         onEdit={() => {setEditingServer(s); setFormType(s.type); setIsFormOpen(true);}} 
-                                        formatDate={formatDT}
                                     />
                                 ))}
                             </div>
                         )}
                     </main>
 
-                    {/* نافذة الإضافة/التعديل */}
                     {isFormOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
                             <form onSubmit={handleSave} className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-fade border-t-8 border-blue-600 overflow-hidden">
                                 <div className="p-6 flex justify-between items-center border-b font-bold text-gray-700">
-                                    <span>{editingServer ? 'تعديل السيرفر' : 'سيرفر جديد'}</span>
+                                    <span>{editingServer ? 'تعديل البيانات' : 'سيرفر جديد'}</span>
                                     <button type="button" onClick={() => setIsFormOpen(false)}><X/></button>
                                 </div>
                                 <div className="p-8 space-y-4">
-                                    <input name="name" defaultValue={editingServer?.name} required placeholder="اسم السيرفر" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500 transition-all"/>
+                                    <input name="name" defaultValue={editingServer?.name} required placeholder="اسم السيرفر" className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none focus:border-blue-500"/>
                                     <div className="grid grid-cols-2 gap-4">
                                         <select name="type" value={formType} onChange={e => setFormType(e.target.value)} className="bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold">
                                             <option value="فاميلي">فاميلي</option><option value="نيو">نيو</option>
@@ -220,7 +216,7 @@
                                             <option value="true">خالص ✅</option><option value="false">غير خالص ❌</option>
                                         </select>
                                     </div>
-                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95 transition-all">حفظ البيانات سحابياً</button>
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95 transition-all">حفظ ومزامنة</button>
                                 </div>
                             </form>
                         </div>
@@ -229,26 +225,27 @@
             );
         };
 
-        const StatBox = ({ label, val, subLabel, color, active, onClick }) => {
+        const StatBox = ({ label, val, color, active, onClick }) => {
             const colors = { 
                 blue: 'bg-blue-50 text-blue-700 border-blue-200', 
                 red: 'bg-red-50 text-red-700 border-red-200', 
                 red_dark: 'bg-red-600 text-white border-red-700', 
-                green: 'bg-green-50 text-green-700 border-green-200' 
+                green: 'bg-green-50 text-green-700 border-green-200',
+                green_dark: 'bg-green-600 text-white border-green-700'
             };
             return (
                 <button onClick={onClick} className={`p-5 rounded-[2rem] border-2 transition-all text-right shadow-sm ${active ? colors[color] + ' scale-105 ring-4 ring-white shadow-xl' : 'bg-white border-transparent text-gray-500 hover:border-gray-200'}`}>
-                    <p className="text-[10px] font-bold uppercase mb-1 opacity-80">{label}</p>
-                    <p className="text-xl md:text-2xl font-black leading-none" dir="ltr">{val}</p>
-                    {subLabel && <p className="text-[9px] mt-2 font-bold opacity-80">{subLabel}</p>}
+                    <p className="text-[9px] font-bold uppercase mb-1 opacity-70">{label}</p>
+                    <p className="text-sm md:text-lg font-black leading-none" dir="ltr">{val}</p>
                 </button>
             );
         };
 
-        const ServerCard = ({ server, daysLeft, onDelete, onEdit, formatDate }) => {
+        const ServerCard = ({ server, daysLeft, onDelete, onEdit }) => {
             const isExp = daysLeft <= 0;
             const isUnpaid = !server.isPaid;
-            const priceF = parseInt(server.price || 0).toLocaleString('fr-FR');
+            const sellF = (server.sellPrice || 0).toLocaleString('fr-FR');
+            const profitF = (server.profit || 0).toLocaleString('fr-FR');
             
             return (
                 <div className={`server-card bg-white rounded-[2.5rem] p-6 shadow-sm border-2 animate-fade relative overflow-hidden ${isExp ? 'expired-status pulse-red' : isUnpaid ? 'unpaid-card shadow-red-50' : 'border-white'}`}>
@@ -259,7 +256,7 @@
                                 <h3 className="font-bold text-gray-800 leading-tight">{server.name}</h3>
                                 <div className="flex gap-2 mt-1">
                                     <span className="text-[10px] bg-white border px-2 py-0.5 rounded-full font-bold text-gray-400 uppercase">{server.type}</span>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isUnpaid ? 'bg-white text-red-600' : 'bg-blue-50 text-blue-600'}`} dir="ltr">{priceF} دج</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${isUnpaid ? 'bg-white text-red-600' : 'bg-blue-50 text-blue-600'}`} dir="ltr">{sellF} دج</span>
                                 </div>
                             </div>
                         </div>
@@ -269,11 +266,14 @@
                         </div>
                     </div>
                     
-                    <div className={`p-3 rounded-xl border border-dashed mb-4 text-xs font-bold truncate text-center ${isUnpaid ? 'bg-white/50 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-slate-700'}`} dir="ltr">{server.identifier}</div>
+                    <div className={`p-3 rounded-xl border border-dashed mb-4 text-xs font-bold text-center ${isUnpaid ? 'bg-white/50 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-slate-700'}`} dir="ltr">{server.identifier}</div>
                     
                     <div className="flex justify-between items-center mb-6 text-[10px] font-bold uppercase px-1" dir="ltr">
-                        <span className={isExp || isUnpaid ? 'text-red-600' : 'text-gray-400'}>{isExp ? 'EXPIRED ⚠️' : `LEFT: ${daysLeft} DAYS`}</span>
-                        <span className="text-gray-400">END: {formatDate(server.endDate)}</span>
+                        <div className="flex flex-col">
+                            <span className={isExp || isUnpaid ? 'text-red-600' : 'text-gray-400'}>{isExp ? 'EXPIRED ⚠️' : `LEFT: ${daysLeft} DAYS`}</span>
+                            <span className="text-green-600">PROFIT: +{profitF} دج</span>
+                        </div>
+                        <span className="text-gray-400 self-end">END: {new Date(server.endDate).toLocaleDateString('fr-FR')}</span>
                     </div>
 
                     <div className={`w-full py-3 rounded-2xl font-black text-xs text-center border shadow-sm ${
